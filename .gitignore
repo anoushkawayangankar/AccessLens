@@ -1,0 +1,18 @@
+# macOS
+.DS_Store
+
+# Xcode user and workspace state
+xcuserdata/
+*.xcuserstate
+*.xcscmblueprint
+
+# Build products and indexes
+DerivedData/
+build/
+*.xcarchive
+*.ipa
+*.dSYM
+
+# Swift Package Manager local state
+.swiftpm/
+Packages/

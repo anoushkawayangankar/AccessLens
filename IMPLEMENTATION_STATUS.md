@@ -5,6 +5,7 @@
 | Milestone | Status | Completion gate |
 |---|---|---|
 | 0 — Product definition + production architecture | **COMPLETE** | Scope/claims, architecture, models, policies, roadmap, and release foundation documented; no feature implementation. |
+| 1 — Production iOS application foundation | **COMPLETE** | App shell, typed navigation, composition root, lifecycle/logging/error boundaries, design/accessibility foundation, Xcode test targets, and hygiene established. Debug build and complete unit/UI suites passed on the documented iPhone Simulator. |
 
 ## Planned staged workflow
 
@@ -26,7 +27,16 @@ At the end of every milestone: complete its scoped implementation; run focused t
 
 ## Current implementation inventory
 
-- Production Swift features added by Milestone 0: **none**.
+- Foundation implementation: SwiftUI application shell, app-level typed navigation, dependency composition, lifecycle observation, OSLog categories, presentation-safe error value, design tokens, XCTest target, and UI-test target.
 - Camera/Vision/OCR/analysis/persistence/export/onboarding production implementation: **not started**.
 - Third-party dependencies introduced: **none**.
+- Deployment target: **iOS 17.0**.
+- Supported device family: **iPhone**. Supported orientations are portrait, landscape left, and landscape right to support future camera scanning without forcing a single orientation.
+- Bundle identifier: **`anoushka.AccessLens`** (preserved from the starter project).
 
+## Milestone 1 verification record
+
+- Simulator: **iPhone 17 Pro**, iOS Simulator 26.5, device ID `488A5CFD-DCA8-42B5-8AE9-346DBFBDEE14`.
+- Debug build: **PASSED** using `xcodebuild` against that concrete Simulator on 2026-09-03.
+- Unit tests: **PASSED**, 4 passed / 0 failed / 0 skipped (`AccessLensTests`).
+- UI tests: **PASSED**, 1 passed / 0 failed / 0 skipped (`AccessLensUITests`).
