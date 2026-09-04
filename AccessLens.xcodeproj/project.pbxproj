@@ -6,30 +6,6 @@
 	objectVersion = 77;
 	objects = {
 
-/* Begin PBXFileReference section */
-		3EBFC6B1304999FE0074DB8F /* AccessLens.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = AccessLens.app; sourceTree = BUILT_PRODUCTS_DIR; };
-		1A2B3C4D5E6F000000000001 /* AccessLensTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = AccessLensTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
-		1A2B3C4D5E6F000000000002 /* AccessLensUITests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = AccessLensUITests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
-/* End PBXFileReference section */
-
-/* Begin PBXFileSystemSynchronizedRootGroup section */
-		3EBFC6B3304999FE0074DB8F /* AccessLens */ = {
-			isa = PBXFileSystemSynchronizedRootGroup;
-			path = AccessLens;
-			sourceTree = "<group>";
-		};
-		1A2B3C4D5E6F000000000003 /* AccessLensTests */ = {
-			isa = PBXFileSystemSynchronizedRootGroup;
-			path = AccessLensTests;
-			sourceTree = "<group>";
-		};
-		1A2B3C4D5E6F000000000004 /* AccessLensUITests */ = {
-			isa = PBXFileSystemSynchronizedRootGroup;
-			path = AccessLensUITests;
-			sourceTree = "<group>";
-		};
-/* End PBXFileSystemSynchronizedRootGroup section */
-
 /* Begin PBXContainerItemProxy section */
 		1A2B3C4D5E6F00000000000C /* PBXContainerItemProxy */ = {
 			isa = PBXContainerItemProxy;
@@ -47,14 +23,31 @@
 		};
 /* End PBXContainerItemProxy section */
 
-/* Begin PBXFrameworksBuildPhase section */
-		3EBFC6AE304999FE0074DB8F /* Frameworks */ = {
-			isa = PBXFrameworksBuildPhase;
-			buildActionMask = 2147483647;
-			files = (
-			);
-			runOnlyForDeploymentPostprocessing = 0;
+/* Begin PBXFileReference section */
+		1A2B3C4D5E6F000000000001 /* AccessLensTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = AccessLensTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
+		1A2B3C4D5E6F000000000002 /* AccessLensUITests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = AccessLensUITests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
+		3EBFC6B1304999FE0074DB8F /* AccessLens.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = AccessLens.app; sourceTree = BUILT_PRODUCTS_DIR; };
+/* End PBXFileReference section */
+
+/* Begin PBXFileSystemSynchronizedRootGroup section */
+		1A2B3C4D5E6F000000000003 /* AccessLensTests */ = {
+			isa = PBXFileSystemSynchronizedRootGroup;
+			path = AccessLensTests;
+			sourceTree = "<group>";
 		};
+		1A2B3C4D5E6F000000000004 /* AccessLensUITests */ = {
+			isa = PBXFileSystemSynchronizedRootGroup;
+			path = AccessLensUITests;
+			sourceTree = "<group>";
+		};
+		3EBFC6B3304999FE0074DB8F /* AccessLens */ = {
+			isa = PBXFileSystemSynchronizedRootGroup;
+			path = AccessLens;
+			sourceTree = "<group>";
+		};
+/* End PBXFileSystemSynchronizedRootGroup section */
+
+/* Begin PBXFrameworksBuildPhase section */
 		1A2B3C4D5E6F000000000005 /* Frameworks */ = {
 			isa = PBXFrameworksBuildPhase;
 			buildActionMask = 2147483647;
@@ -63,6 +56,13 @@
 			runOnlyForDeploymentPostprocessing = 0;
 		};
 		1A2B3C4D5E6F000000000006 /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		3EBFC6AE304999FE0074DB8F /* Frameworks */ = {
 			isa = PBXFrameworksBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
@@ -95,28 +95,6 @@
 /* End PBXGroup section */
 
 /* Begin PBXNativeTarget section */
-		3EBFC6B0304999FE0074DB8F /* AccessLens */ = {
-			isa = PBXNativeTarget;
-			buildConfigurationList = 3EBFC6BC30499A000074DB8F /* Build configuration list for PBXNativeTarget "AccessLens" */;
-			buildPhases = (
-				3EBFC6AD304999FE0074DB8F /* Sources */,
-				3EBFC6AE304999FE0074DB8F /* Frameworks */,
-				3EBFC6AF304999FE0074DB8F /* Resources */,
-			);
-			buildRules = (
-			);
-			dependencies = (
-			);
-			fileSystemSynchronizedGroups = (
-				3EBFC6B3304999FE0074DB8F /* AccessLens */,
-			);
-			name = AccessLens;
-			packageProductDependencies = (
-			);
-			productName = AccessLens;
-			productReference = 3EBFC6B1304999FE0074DB8F /* AccessLens.app */;
-			productType = "com.apple.product-type.application";
-		};
 		1A2B3C4D5E6F00000000000A /* AccessLensTests */ = {
 			isa = PBXNativeTarget;
 			buildConfigurationList = 1A2B3C4D5E6F000000000014 /* Build configuration list for PBXNativeTarget "AccessLensTests" */;
@@ -163,6 +141,28 @@
 			productReference = 1A2B3C4D5E6F000000000002 /* AccessLensUITests.xctest */;
 			productType = "com.apple.product-type.bundle.ui-testing";
 		};
+		3EBFC6B0304999FE0074DB8F /* AccessLens */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = 3EBFC6BC30499A000074DB8F /* Build configuration list for PBXNativeTarget "AccessLens" */;
+			buildPhases = (
+				3EBFC6AD304999FE0074DB8F /* Sources */,
+				3EBFC6AE304999FE0074DB8F /* Frameworks */,
+				3EBFC6AF304999FE0074DB8F /* Resources */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+			);
+			fileSystemSynchronizedGroups = (
+				3EBFC6B3304999FE0074DB8F /* AccessLens */,
+			);
+			name = AccessLens;
+			packageProductDependencies = (
+			);
+			productName = AccessLens;
+			productReference = 3EBFC6B1304999FE0074DB8F /* AccessLens.app */;
+			productType = "com.apple.product-type.application";
+		};
 /* End PBXNativeTarget section */
 
 /* Begin PBXProject section */
@@ -173,9 +173,6 @@
 				LastSwiftUpdateCheck = 2660;
 				LastUpgradeCheck = 2660;
 				TargetAttributes = {
-					3EBFC6B0304999FE0074DB8F = {
-						CreatedOnToolsVersion = 26.6;
-					};
 					1A2B3C4D5E6F00000000000A = {
 						CreatedOnToolsVersion = 26.6;
 						TestTargetID = 3EBFC6B0304999FE0074DB8F;
@@ -183,6 +180,9 @@
 					1A2B3C4D5E6F00000000000B = {
 						CreatedOnToolsVersion = 26.6;
 						TestTargetID = 3EBFC6B0304999FE0074DB8F;
+					};
+					3EBFC6B0304999FE0074DB8F = {
+						CreatedOnToolsVersion = 26.6;
 					};
 				};
 			};
@@ -208,13 +208,6 @@
 /* End PBXProject section */
 
 /* Begin PBXResourcesBuildPhase section */
-		3EBFC6AF304999FE0074DB8F /* Resources */ = {
-			isa = PBXResourcesBuildPhase;
-			buildActionMask = 2147483647;
-			files = (
-			);
-			runOnlyForDeploymentPostprocessing = 0;
-		};
 		1A2B3C4D5E6F000000000009 /* Resources */ = {
 			isa = PBXResourcesBuildPhase;
 			buildActionMask = 2147483647;
@@ -229,16 +222,16 @@
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
-/* End PBXResourcesBuildPhase section */
-
-/* Begin PBXSourcesBuildPhase section */
-		3EBFC6AD304999FE0074DB8F /* Sources */ = {
-			isa = PBXSourcesBuildPhase;
+		3EBFC6AF304999FE0074DB8F /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
+/* End PBXResourcesBuildPhase section */
+
+/* Begin PBXSourcesBuildPhase section */
 		1A2B3C4D5E6F000000000007 /* Sources */ = {
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
@@ -247,6 +240,13 @@
 			runOnlyForDeploymentPostprocessing = 0;
 		};
 		1A2B3C4D5E6F000000000008 /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		3EBFC6AD304999FE0074DB8F /* Sources */ = {
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
@@ -269,6 +269,80 @@
 /* End PBXTargetDependency section */
 
 /* Begin XCBuildConfiguration section */
+		1A2B3C4D5E6F000000000010 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				BUNDLE_LOADER = "$(TEST_HOST)";
+				GENERATE_INFOPLIST_FILE = YES;
+				IPHONEOS_DEPLOYMENT_TARGET = 17.0;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+					"@loader_path/Frameworks",
+				);
+				PRODUCT_BUNDLE_IDENTIFIER = anoushka.AccessLensTests;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SDKROOT = auto;
+				SUPPORTED_PLATFORMS = "iphoneos iphonesimulator";
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = 1;
+				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/AccessLens.app/$(BUNDLE_EXECUTABLE_FOLDER_PATH)/AccessLens";
+				TEST_TARGET_NAME = AccessLens;
+			};
+			name = Debug;
+		};
+		1A2B3C4D5E6F000000000011 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				BUNDLE_LOADER = "$(TEST_HOST)";
+				GENERATE_INFOPLIST_FILE = YES;
+				IPHONEOS_DEPLOYMENT_TARGET = 17.0;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+					"@loader_path/Frameworks",
+				);
+				PRODUCT_BUNDLE_IDENTIFIER = anoushka.AccessLensTests;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SDKROOT = auto;
+				SUPPORTED_PLATFORMS = "iphoneos iphonesimulator";
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = 1;
+				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/AccessLens.app/$(BUNDLE_EXECUTABLE_FOLDER_PATH)/AccessLens";
+				TEST_TARGET_NAME = AccessLens;
+			};
+			name = Release;
+		};
+		1A2B3C4D5E6F000000000012 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				GENERATE_INFOPLIST_FILE = YES;
+				IPHONEOS_DEPLOYMENT_TARGET = 17.0;
+				PRODUCT_BUNDLE_IDENTIFIER = anoushka.AccessLensUITests;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SDKROOT = auto;
+				SUPPORTED_PLATFORMS = "iphoneos iphonesimulator";
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = 1;
+				TEST_TARGET_NAME = AccessLens;
+			};
+			name = Debug;
+		};
+		1A2B3C4D5E6F000000000013 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				GENERATE_INFOPLIST_FILE = YES;
+				IPHONEOS_DEPLOYMENT_TARGET = 17.0;
+				PRODUCT_BUNDLE_IDENTIFIER = anoushka.AccessLensUITests;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SDKROOT = auto;
+				SUPPORTED_PLATFORMS = "iphoneos iphonesimulator";
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = 1;
+				TEST_TARGET_NAME = AccessLens;
+			};
+			name = Release;
+		};
 		3EBFC6BA30499A000074DB8F /* Debug */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
@@ -467,93 +541,9 @@
 			};
 			name = Release;
 		};
-		1A2B3C4D5E6F000000000010 /* Debug */ = {
-			isa = XCBuildConfiguration;
-			buildSettings = {
-				BUNDLE_LOADER = "$(TEST_HOST)";
-				GENERATE_INFOPLIST_FILE = YES;
-				IPHONEOS_DEPLOYMENT_TARGET = 17.0;
-				LD_RUNPATH_SEARCH_PATHS = "$(inherited) @executable_path/Frameworks @loader_path/Frameworks";
-				PRODUCT_BUNDLE_IDENTIFIER = anoushka.AccessLensTests;
-				PRODUCT_NAME = "$(TARGET_NAME)";
-				SDKROOT = auto;
-				SUPPORTED_PLATFORMS = "iphoneos iphonesimulator";
-				SWIFT_VERSION = 5.0;
-				TARGETED_DEVICE_FAMILY = 1;
-				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/AccessLens.app/$(BUNDLE_EXECUTABLE_FOLDER_PATH)/AccessLens";
-				TEST_TARGET_NAME = AccessLens;
-			};
-			name = Debug;
-		};
-		1A2B3C4D5E6F000000000011 /* Release */ = {
-			isa = XCBuildConfiguration;
-			buildSettings = {
-				BUNDLE_LOADER = "$(TEST_HOST)";
-				GENERATE_INFOPLIST_FILE = YES;
-				IPHONEOS_DEPLOYMENT_TARGET = 17.0;
-				LD_RUNPATH_SEARCH_PATHS = "$(inherited) @executable_path/Frameworks @loader_path/Frameworks";
-				PRODUCT_BUNDLE_IDENTIFIER = anoushka.AccessLensTests;
-				PRODUCT_NAME = "$(TARGET_NAME)";
-				SDKROOT = auto;
-				SUPPORTED_PLATFORMS = "iphoneos iphonesimulator";
-				SWIFT_VERSION = 5.0;
-				TARGETED_DEVICE_FAMILY = 1;
-				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/AccessLens.app/$(BUNDLE_EXECUTABLE_FOLDER_PATH)/AccessLens";
-				TEST_TARGET_NAME = AccessLens;
-			};
-			name = Release;
-		};
-		1A2B3C4D5E6F000000000012 /* Debug */ = {
-			isa = XCBuildConfiguration;
-			buildSettings = {
-				GENERATE_INFOPLIST_FILE = YES;
-				IPHONEOS_DEPLOYMENT_TARGET = 17.0;
-				PRODUCT_BUNDLE_IDENTIFIER = anoushka.AccessLensUITests;
-				PRODUCT_NAME = "$(TARGET_NAME)";
-				SDKROOT = auto;
-				SUPPORTED_PLATFORMS = "iphoneos iphonesimulator";
-				SWIFT_VERSION = 5.0;
-				TARGETED_DEVICE_FAMILY = 1;
-				TEST_TARGET_NAME = AccessLens;
-			};
-			name = Debug;
-		};
-		1A2B3C4D5E6F000000000013 /* Release */ = {
-			isa = XCBuildConfiguration;
-			buildSettings = {
-				GENERATE_INFOPLIST_FILE = YES;
-				IPHONEOS_DEPLOYMENT_TARGET = 17.0;
-				PRODUCT_BUNDLE_IDENTIFIER = anoushka.AccessLensUITests;
-				PRODUCT_NAME = "$(TARGET_NAME)";
-				SDKROOT = auto;
-				SUPPORTED_PLATFORMS = "iphoneos iphonesimulator";
-				SWIFT_VERSION = 5.0;
-				TARGETED_DEVICE_FAMILY = 1;
-				TEST_TARGET_NAME = AccessLens;
-			};
-			name = Release;
-		};
 /* End XCBuildConfiguration section */
 
 /* Begin XCConfigurationList section */
-		3EBFC6AC304999FE0074DB8F /* Build configuration list for PBXProject "AccessLens" */ = {
-			isa = XCConfigurationList;
-			buildConfigurations = (
-				3EBFC6BA30499A000074DB8F /* Debug */,
-				3EBFC6BB30499A000074DB8F /* Release */,
-			);
-			defaultConfigurationIsVisible = 0;
-			defaultConfigurationName = Release;
-		};
-		3EBFC6BC30499A000074DB8F /* Build configuration list for PBXNativeTarget "AccessLens" */ = {
-			isa = XCConfigurationList;
-			buildConfigurations = (
-				3EBFC6BD30499A000074DB8F /* Debug */,
-				3EBFC6BE30499A000074DB8F /* Release */,
-			);
-			defaultConfigurationIsVisible = 0;
-			defaultConfigurationName = Release;
-		};
 		1A2B3C4D5E6F000000000014 /* Build configuration list for PBXNativeTarget "AccessLensTests" */ = {
 			isa = XCConfigurationList;
 			buildConfigurations = (
@@ -568,6 +558,24 @@
 			buildConfigurations = (
 				1A2B3C4D5E6F000000000012 /* Debug */,
 				1A2B3C4D5E6F000000000013 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+		3EBFC6AC304999FE0074DB8F /* Build configuration list for PBXProject "AccessLens" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				3EBFC6BA30499A000074DB8F /* Debug */,
+				3EBFC6BB30499A000074DB8F /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+		3EBFC6BC30499A000074DB8F /* Build configuration list for PBXNativeTarget "AccessLens" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				3EBFC6BD30499A000074DB8F /* Debug */,
+				3EBFC6BE30499A000074DB8F /* Release */,
 			);
 			defaultConfigurationIsVisible = 0;
 			defaultConfigurationName = Release;

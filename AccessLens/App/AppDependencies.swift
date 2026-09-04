@@ -31,7 +31,9 @@ final class AppDependencies {
         let sessionController = cameraSessionController ?? CameraSessionController()
         self.cameraSessionController = sessionController
         self.cameraLifecycleCoordinator = CameraLifecycleCoordinator(sessionController: sessionController)
-        let coordinator = analysisCoordinator ?? AnalysisCoordinator()
+        let coordinator = analysisCoordinator ?? AnalysisCoordinator(
+            analyzers: [VisionTextAnalyzer()]
+        )
         self.analysisCoordinator = coordinator
         sessionController.frameSource.consumer = coordinator
     }

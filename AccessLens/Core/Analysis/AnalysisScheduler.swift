@@ -14,7 +14,7 @@ nonisolated struct AnalysisSchedulerSnapshot: Equatable, Sendable {
 }
 
 /// Lock-protected bounded scheduler. It admits one analysis task and retains
-/// only one newest metadata frame while that task runs; it never queues a Task
+/// only one newest frame payload while that task runs; it never queues a Task
 /// for every camera callback.
 nonisolated final class AnalysisScheduler: @unchecked Sendable {
     private struct InFlightWork {
@@ -27,12 +27,17 @@ nonisolated final class AnalysisScheduler: @unchecked Sendable {
         var activeSessionID: AnalysisSessionID?
         var nextSequence: UInt64 = 0
         var inFlight: InFlightWork?
-        var pendingFrame: AnalysisFrame?
+        var pendingFrame: ScheduledFrame?
         var lastStartedPresentationTime: Double?
         var performanceState = AnalysisPerformanceState.normal
         var pendingReplacementCount = 0
         var cadenceDropCount = 0
         var staleResultDiscardCount = 0
+    }
+
+    private struct ScheduledFrame: Sendable {
+        let frame: AnalysisFrame
+        let payload: AnalysisFramePayload?
     }
 
     private let lock = NSLock()
@@ -102,13 +107,14 @@ nonisolated final class AnalysisScheduler: @unchecked Sendable {
         AppLog.analysis.info("Analysis performance policy changed")
     }
 
-    /// The caller supplies only compact frame metadata. Sequence assignment and
-    /// admission are synchronous and bounded, so capture callbacks return fast.
+    /// Sequence assignment and admission are synchronous and bounded, so the
+    /// capture callback retains at most one in-flight and one pending payload.
     func submit(
         sessionID: AnalysisSessionID,
         presentationTimeSeconds: Double?,
         orientation: AnalysisImageOrientation?,
-        dimensions: AnalysisFrameDimensions?
+        dimensions: AnalysisFrameDimensions?,
+        payload: AnalysisFramePayload? = nil
     ) {
         lock.lock()
         guard state.activeSessionID == sessionID else {
@@ -125,6 +131,8 @@ nonisolated final class AnalysisScheduler: @unchecked Sendable {
             dimensions: dimensions
         )
 
+        let scheduledFrame = ScheduledFrame(frame: frame, payload: payload)
+
         if performancePolicy.cadence(for: state.performanceState) == .suspended {
             state.cadenceDropCount += 1
             lock.unlock()
@@ -135,12 +143,12 @@ nonisolated final class AnalysisScheduler: @unchecked Sendable {
             if state.pendingFrame != nil {
                 state.pendingReplacementCount += 1
             }
-            state.pendingFrame = frame
+            state.pendingFrame = scheduledFrame
             lock.unlock()
             return
         }
 
-        startIfPermittedLocked(frame)
+        startIfPermittedLocked(scheduledFrame)
         lock.unlock()
     }
 
@@ -151,21 +159,22 @@ nonisolated final class AnalysisScheduler: @unchecked Sendable {
         return AnalysisSchedulerSnapshot(
             activeSessionID: state.activeSessionID,
             inFlightSequence: state.inFlight?.frame.sequence,
-            pendingSequence: state.pendingFrame?.sequence,
+            pendingSequence: state.pendingFrame?.frame.sequence,
             pendingReplacementCount: state.pendingReplacementCount,
             cadenceDropCount: state.cadenceDropCount,
             staleResultDiscardCount: state.staleResultDiscardCount
         )
     }
 
-    private func startIfPermittedLocked(_ frame: AnalysisFrame) {
+    private func startIfPermittedLocked(_ scheduledFrame: ScheduledFrame) {
+        let frame = scheduledFrame.frame
         guard permits(frame) else {
             state.cadenceDropCount += 1
             return
         }
 
         let workID = UUID()
-        let context = AnalysisContext(frame: frame)
+        let context = AnalysisContext(frame: frame, payload: scheduledFrame.payload)
         state.lastStartedPresentationTime = frame.presentationTimeSeconds
         state.inFlight = InFlightWork(workID: workID, frame: frame, task: nil)
 
@@ -210,6 +219,7 @@ nonisolated final class AnalysisScheduler: @unchecked Sendable {
                 sessionID: frame.sessionID,
                 frameSequence: frame.sequence,
                 observations: output.observations,
+                textObservations: output.textObservations,
                 candidates: output.candidates,
                 failures: output.failures
             )
@@ -231,6 +241,7 @@ nonisolated final class AnalysisScheduler: @unchecked Sendable {
         context: AnalysisContext
     ) async -> AnalysisExecution {
         var observations: [NormalizedObservation] = []
+        var textObservations: [RecognizedTextObservation] = []
         var candidates: [FindingCandidate] = []
         var failures: [AnalysisFailure] = []
 
@@ -245,6 +256,7 @@ nonisolated final class AnalysisScheduler: @unchecked Sendable {
                     return .cancelled
                 }
                 observations.append(contentsOf: output.observations)
+                textObservations.append(contentsOf: output.textObservations)
                 candidates.append(contentsOf: output.candidates)
             } catch is CancellationError {
                 return .cancelled
@@ -261,6 +273,7 @@ nonisolated final class AnalysisScheduler: @unchecked Sendable {
 
         return .completed(AnalysisExecutionOutput(
             observations: observations,
+            textObservations: textObservations,
             candidates: candidates,
             failures: failures
         ))
@@ -274,6 +287,7 @@ private enum AnalysisExecution {
 
 private struct AnalysisExecutionOutput {
     let observations: [NormalizedObservation]
+    let textObservations: [RecognizedTextObservation]
     let candidates: [FindingCandidate]
     let failures: [AnalysisFailure]
 }

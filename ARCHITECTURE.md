@@ -67,7 +67,7 @@ The Scan surface hides the raw preview from VoiceOver and exposes text-first sta
 
 `AnalysisScheduler` accepts only a current session generation and uses latest-frame-wins behavior. It admits at most one (or a small documented bound of) in-flight analyses; frames arriving while busy replace/drop the pending frame. It sets a cadence based on scene state and device policy, rather than analyzing every capture frame. Each work item carries session generation, frame timestamp, orientation, and cancellation token. Results are rejected if cancelled, stale, from a prior camera generation, or superseded by newer user state.
 
-Vision runs off the main actor. A Vision adapter owns requests/handlers for an analysis job, converts output to normalized value observations, and releases frame resources promptly. Domain analyzers receive normalized context, not `VNObservation` objects. Thermal state and Low Power Mode reduce cadence, disable optional work, and may surface `unableToAssess`; critical thermal state stops optional analysis safely. MainActor only receives compact presentation snapshots.
+Vision runs off the main actor. A Vision adapter owns requests/handlers for an analysis job, converts output to normalized value observations, and releases frame resources promptly. `VNObservation` objects terminate at that adapter boundary; only the adapter receives the scheduler's opaque, bounded frame payload. Thermal state and Low Power Mode reduce cadence, disable optional work, and may surface `unableToAssess`; critical thermal state stops optional analysis safely. MainActor only receives compact presentation snapshots.
 
 ## Analysis scheduling foundation (Milestone 4)
 
@@ -92,7 +92,19 @@ protocol AccessibilityAnalyzer: Sendable {
 }
 ```
 
-Initial justified analyzers are `TextAnalyzer` and `TextLegibilityAnalyzer`; the latter consumes documented quality signals and produces review/assessment candidates, not a compliance verdict. They remain unimplemented until Milestone 5. `SignageAnalyzer` is deferred until a definition and evidence source exist. `ContrastAnalyzer` is deferred until constrained sampling and validation demonstrate defensible behavior. Each analyzer has isolated deterministic test fixtures and a versioned policy.
+Initial justified analyzers are `VisionTextAnalyzer` and a future `TextLegibilityAnalyzer`; the latter consumes documented quality signals and produces review/assessment candidates, not a compliance verdict. `VisionTextAnalyzer` is implemented in Milestone 5 as the sole real Vision request. It uses `VNRecognizeTextRequest` at the scheduler's conservative cadence, maps OCR output to `RecognizedTextObservation`, and applies a small, conservative signage-keyword classifier. `SignageAnalyzer` as a separate semantic engine remains deferred. `ContrastAnalyzer` is deferred until constrained sampling and validation demonstrate defensible behavior. Each analyzer has isolated deterministic test fixtures and a versioned policy.
+
+## On-device text and signage analyzer (Milestone 5)
+
+`AppDependencies` composes exactly one `VisionTextAnalyzer` into the existing `AnalysisCoordinator`; camera frames cannot reach it except through the one-in-flight/one-pending scheduler. The analyzer uses `VNRecognizeTextRequest` with `.fast` recognition for live environmental signage, no language correction (to avoid rewriting short observed labels), initial `en-US` configuration structured for later localization, a minimum text height of 2% of the image, and a centralized 0.35 raw-Vision-confidence admission filter. The existing normal/fair 0.75-second cadence is the initial OCR cadence; serious thermal/Low Power Mode uses the existing 1.5-second policy and critical thermal state suspends optional OCR.
+
+The scheduler now holds an immutable `AnalysisFramePayload` only for its bounded in-flight/pending lifetime. This narrowly justified `@unchecked Sendable` wrapper encloses a read-only `CMSampleBuffer` because CoreMedia lacks a Sendable annotation; it has one owner after capture handoff, is accessed by only the admitted analyzer task, is never exposed to UI/domain/persistence, and is released on completion, replacement, or cancellation. `AnalysisFrame` remains a compact Sendable metadata value. There is no frame queue, copy, upload, persistence, or frame logging.
+
+`VisionTextObservationMapper` removes empty/pathologically long text, collapses repeated whitespace while preserving recognized display casing, and maps Vision's lower-left normalized box into AccessLens's top-left normalized image space (`x`, `y`, `width`, `height` in `0...1`). `RecognizedTextObservation` is the framework-independent boundary: ID, analyzer ID, session/frame sequence, timestamp, text, raw confidence evidence, and transformed region. Vision framework types and raw framework observations never reach SwiftUI.
+
+`SignageCandidateClassifier` recognizes only bounded, high-enough-confidence environmental-sign wording (`EXIT`, `ENTRANCE`, `RESTROOM`, `TOILET`, `ACCESSIBLE`, `ACCESS`, `ELEVATOR`, `LIFT`, `STAIRS`, `EMERGENCY`, `PUSH`, `PULL`, `FLOOR`, and `ROOM`, including selected phrases such as “Emergency Exit”). A match creates a transient `.environmentalSignage` candidate, not a barrier, severity, accessibility finding, or compliance claim. `ScanViewModel` owns a maximum-four, eight-second transient candidate list and deduplicates text case-insensitively with spatial intersection-over-union before publishing a compact presentation snapshot. New distinct candidates receive one VoiceOver announcement; repeated OCR does not. Ending or invalidating a scan clears this entire live state.
+
+The Scan view shows only real, transient “Recent signage observations” from those candidates plus limitation language. It includes no bounding overlay because physical-device coordinate accuracy has not yet been validated. Findings stabilization, confidence policy, severity, remediation, saved scans, and reporting remain later work.
 
 ## Result stabilization
 
@@ -212,8 +224,8 @@ Organize by feature first and place reusable, platform-facing capabilities in `C
 |---|---|
 | App/root navigation coordinator (`@MainActor`) | app route, modal route, onboarding completion routing—not data stores. |
 | Camera session controller | capture authorization/session/lifecycle state. |
-| Live analysis session actor | generation ID, scheduler, analyzer tasks, transient raw observations, stabilization state. |
-| Scan feature view model (`@MainActor`) | compact presentation snapshot and user actions, derived from the live session. |
+| Live analysis session actor | generation ID, scheduler, analyzer tasks, bounded opaque frame payload, and transient raw observations. |
+| Scan feature view model (`@MainActor`) | compact presentation snapshot, bounded transient signage deduplication, VoiceOver deduplication, and user actions, derived from the live session. |
 | Scan repository | saved scan records and transactions. |
 | Accessibility announcement coordinator (`@MainActor`) | coalescing/rate limit/deduplication of spoken announcements. |
 

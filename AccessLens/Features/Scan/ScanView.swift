@@ -32,9 +32,13 @@ struct ScanView: View {
                 preview
                 statusCard
 
-                Text("Accessibility analysis is not available yet. This camera preview prepares AccessLens for a future on-device analysis stage.")
+                Text(analysisSummary)
                     .font(.body)
                     .accessibilityIdentifier("scan-foundation-message")
+
+                if !viewModel.recentSignageCandidates.isEmpty {
+                    signageResults
+                }
             }
             .frame(maxWidth: AppLayout.maximumReadableWidth, alignment: .leading)
             .padding(AppSpacing.page)
@@ -157,9 +161,9 @@ struct ScanView: View {
             )
         case .running:
             statusContainer(
-                title: "Camera ready",
-                message: "Point your camera at the environment. Accessibility analysis will be added in the next stage.",
-                symbolName: "camera"
+                title: viewModel.isAnalyzingEnvironment ? "Analyzing environment" : "Camera ready",
+                message: "Point your camera at visible signs. AccessLens presents text and signage observations, not accessibility certification.",
+                symbolName: "text.viewfinder"
             )
         case .interrupted:
             statusContainer(
@@ -175,6 +179,43 @@ struct ScanView: View {
             )
             .accessibilityIdentifier("camera-unavailable-state")
         }
+    }
+
+    private var analysisSummary: String {
+        if viewModel.isAnalyzingEnvironment {
+            return "AccessLens analyzes visible text and environmental signage on this device. Results can be uncertain and should be verified in person."
+        }
+        return "Camera analysis starts when camera input is available. AccessLens does not certify accessibility or legal compliance."
+    }
+
+    private var signageResults: some View {
+        VStack(alignment: .leading, spacing: AppSpacing.small) {
+            Label("Recent signage observations", systemImage: "signpost.right")
+                .font(.headline)
+                .accessibilityAddTraits(.isHeader)
+
+            ForEach(viewModel.recentSignageCandidates) { candidate in
+                VStack(alignment: .leading, spacing: AppSpacing.small) {
+                    Text("Signage detected")
+                        .font(.subheadline.weight(.semibold))
+                    if let text = candidate.recognizedText {
+                        Text(text)
+                            .font(.body)
+                    }
+                    Text("Potential text observation. Verify it in person.")
+                        .font(.footnote)
+                        .foregroundStyle(.secondary)
+                }
+                .padding(AppSpacing.small)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .background(.tertiary, in: RoundedRectangle(cornerRadius: AppCornerRadius.card, style: .continuous))
+                .accessibilityElement(children: .combine)
+            }
+        }
+        .padding(AppSpacing.medium)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(.quaternary, in: RoundedRectangle(cornerRadius: AppCornerRadius.card, style: .continuous))
+        .accessibilityIdentifier("recent-signage-observations")
     }
 
     private func statusContainer<Content: View>(

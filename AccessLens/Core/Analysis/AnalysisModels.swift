@@ -1,5 +1,6 @@
 import Foundation
 import ImageIO
+@preconcurrency import AVFoundation
 
 /// Opaque identity for one live analysis lifetime. A new Scan appearance or
 /// foreground resume creates a new value so late work cannot cross sessions.
@@ -80,8 +81,32 @@ nonisolated struct AnalysisFrame: Equatable, Sendable {
     let dimensions: AnalysisFrameDimensions?
 }
 
+/// An opaque, bounded handoff of the frame currently admitted by the analysis
+/// scheduler. The payload is immutable and is retained only by one in-flight
+/// analysis or the single latest pending analysis. `CMSampleBuffer` is not
+/// exposed to UI, persistence, or domain models.
+///
+/// CoreMedia does not provide a Sendable annotation for `CMSampleBuffer`.
+/// This narrow unchecked boundary is justified by scheduler ownership: after
+/// the capture callback hands a payload to the scheduler, exactly one analyzer
+/// task reads it and no code mutates it. The scheduler drops the reference when
+/// the task completes, is cancelled, or is replaced.
+nonisolated final class AnalysisFramePayload: @unchecked Sendable {
+    let sampleBuffer: CMSampleBuffer
+
+    init(sampleBuffer: CMSampleBuffer) {
+        self.sampleBuffer = sampleBuffer
+    }
+}
+
 nonisolated struct AnalysisContext: Sendable {
     let frame: AnalysisFrame
+    let payload: AnalysisFramePayload?
+
+    init(frame: AnalysisFrame, payload: AnalysisFramePayload? = nil) {
+        self.frame = frame
+        self.payload = payload
+    }
 }
 
 nonisolated struct AnalyzerIdentifier: Hashable, Sendable, RawRepresentable {
@@ -97,6 +122,40 @@ nonisolated struct NormalizedRegion: Equatable, Sendable, Hashable {
     let y: Double
     let width: Double
     let height: Double
+}
+
+/// A framework-independent, normalized text observation. Its region is in
+/// image coordinates with a **top-left** origin and values in `0...1`; Vision's
+/// lower-left bounding boxes are transformed at the analyzer boundary.
+nonisolated struct RecognizedTextObservation: Identifiable, Equatable, Sendable, Hashable {
+    let id: UUID
+    let analyzerID: AnalyzerIdentifier
+    let sessionID: AnalysisSessionID
+    let frameSequence: AnalysisFrameSequence
+    let presentationTimeSeconds: Double?
+    let text: String
+    let rawFrameworkConfidence: Double
+    let region: NormalizedRegion
+
+    init(
+        id: UUID = UUID(),
+        analyzerID: AnalyzerIdentifier,
+        sessionID: AnalysisSessionID,
+        frameSequence: AnalysisFrameSequence,
+        presentationTimeSeconds: Double?,
+        text: String,
+        rawFrameworkConfidence: Double,
+        region: NormalizedRegion
+    ) {
+        self.id = id
+        self.analyzerID = analyzerID
+        self.sessionID = sessionID
+        self.frameSequence = frameSequence
+        self.presentationTimeSeconds = presentationTimeSeconds
+        self.text = text
+        self.rawFrameworkConfidence = rawFrameworkConfidence
+        self.region = region
+    }
 }
 
 /// Framework-independent output. Future Vision adapters convert framework
@@ -138,6 +197,11 @@ nonisolated struct FindingCandidate: Identifiable, Equatable, Sendable, Hashable
     let frameSequence: AnalysisFrameSequence
     let region: NormalizedRegion?
     let evidenceKind: String
+    let category: FindingCandidateCategory
+    let recognizedText: String?
+    let rawFrameworkConfidence: Double?
+    let presentationTimeSeconds: Double?
+    let sourceAnalyzerID: AnalyzerIdentifier
 
     init(
         id: UUID = UUID(),
@@ -145,7 +209,12 @@ nonisolated struct FindingCandidate: Identifiable, Equatable, Sendable, Hashable
         sourceObservationIDs: [UUID],
         frameSequence: AnalysisFrameSequence,
         region: NormalizedRegion? = nil,
-        evidenceKind: String
+        evidenceKind: String,
+        category: FindingCandidateCategory = .unclassified,
+        recognizedText: String? = nil,
+        rawFrameworkConfidence: Double? = nil,
+        presentationTimeSeconds: Double? = nil,
+        sourceAnalyzerID: AnalyzerIdentifier = AnalyzerIdentifier(rawValue: "unknown")
     ) {
         self.id = id
         self.sessionID = sessionID
@@ -153,14 +222,37 @@ nonisolated struct FindingCandidate: Identifiable, Equatable, Sendable, Hashable
         self.frameSequence = frameSequence
         self.region = region
         self.evidenceKind = evidenceKind
+        self.category = category
+        self.recognizedText = recognizedText
+        self.rawFrameworkConfidence = rawFrameworkConfidence
+        self.presentationTimeSeconds = presentationTimeSeconds
+        self.sourceAnalyzerID = sourceAnalyzerID
     }
+}
+
+/// Candidate categories are transient evidence groupings. They are not legal,
+/// accessibility-compliance, severity, or persisted finding classifications.
+nonisolated enum FindingCandidateCategory: String, Equatable, Sendable, Hashable {
+    case unclassified
+    case environmentalSignage
 }
 
 nonisolated struct AnalyzerOutput: Equatable, Sendable {
     let observations: [NormalizedObservation]
+    let textObservations: [RecognizedTextObservation]
     let candidates: [FindingCandidate]
 
-    static let empty = AnalyzerOutput(observations: [], candidates: [])
+    init(
+        observations: [NormalizedObservation] = [],
+        textObservations: [RecognizedTextObservation] = [],
+        candidates: [FindingCandidate] = []
+    ) {
+        self.observations = observations
+        self.textObservations = textObservations
+        self.candidates = candidates
+    }
+
+    static let empty = AnalyzerOutput()
 }
 
 nonisolated enum AnalysisError: Error, Equatable, Sendable {
@@ -180,6 +272,7 @@ nonisolated struct AnalysisPassResult: Equatable, Sendable {
     let sessionID: AnalysisSessionID
     let frameSequence: AnalysisFrameSequence
     let observations: [NormalizedObservation]
+    let textObservations: [RecognizedTextObservation]
     let candidates: [FindingCandidate]
     let failures: [AnalysisFailure]
 }

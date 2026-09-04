@@ -47,10 +47,10 @@ struct HomeView: View {
 private struct FoundationStatusView: View {
     var body: some View {
         VStack(alignment: .leading, spacing: AppSpacing.small) {
-            Label("Foundation in progress", systemImage: "hammer")
+            Label("On-device text analysis", systemImage: "text.viewfinder")
                 .font(.headline)
 
-            Text("Scanning is not available yet. AccessLens does not certify accessibility or legal compliance.")
+            Text("Scan visible text and environmental signage. AccessLens presents observations and does not certify accessibility or legal compliance.")
                 .font(.body)
         }
         .padding(AppSpacing.medium)
