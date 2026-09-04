@@ -226,7 +226,11 @@ nonisolated private final class CameraVideoOutputDelegate: NSObject, AVCaptureVi
         didOutput sampleBuffer: CMSampleBuffer,
         from connection: AVCaptureConnection
     ) {
-        frameSource?.deliver(sampleBuffer)
+        frameSource?.deliver(
+            sampleBuffer,
+            videoRotationAngle: connection.videoRotationAngle,
+            isMirrored: connection.isVideoMirrored
+        )
     }
 }
 

@@ -12,13 +12,15 @@ final class AppDependencies {
     let cameraAuthorizationService: any CameraAuthorizationProviding
     let cameraSessionController: CameraSessionController
     let cameraLifecycleCoordinator: CameraLifecycleCoordinator
+    let analysisCoordinator: AnalysisCoordinator
 
     init(
         navigator: AppNavigator? = nil,
         lifecycleCoordinator: AppLifecycleCoordinator? = nil,
         onboardingState: OnboardingState? = nil,
         cameraAuthorizationService: (any CameraAuthorizationProviding)? = nil,
-        cameraSessionController: CameraSessionController? = nil
+        cameraSessionController: CameraSessionController? = nil,
+        analysisCoordinator: AnalysisCoordinator? = nil
     ) {
         self.navigator = navigator ?? AppNavigator()
         self.lifecycleCoordinator = lifecycleCoordinator ?? AppLifecycleCoordinator()
@@ -29,6 +31,9 @@ final class AppDependencies {
         let sessionController = cameraSessionController ?? CameraSessionController()
         self.cameraSessionController = sessionController
         self.cameraLifecycleCoordinator = CameraLifecycleCoordinator(sessionController: sessionController)
+        let coordinator = analysisCoordinator ?? AnalysisCoordinator()
+        self.analysisCoordinator = coordinator
+        sessionController.frameSource.consumer = coordinator
     }
 
     /// Creates process-specific dependencies without exposing test controls in

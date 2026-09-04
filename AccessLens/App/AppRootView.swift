@@ -42,7 +42,8 @@ struct AppRootView: View {
         case .scan:
             ScanView(
                 authorizationService: dependencies.cameraAuthorizationService,
-                sessionController: dependencies.cameraSessionController
+                sessionController: dependencies.cameraSessionController,
+                analysisCoordinator: dependencies.analysisCoordinator
             )
         default:
             FutureDestinationView(route: route)

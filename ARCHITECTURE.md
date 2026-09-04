@@ -69,6 +69,18 @@ The Scan surface hides the raw preview from VoiceOver and exposes text-first sta
 
 Vision runs off the main actor. A Vision adapter owns requests/handlers for an analysis job, converts output to normalized value observations, and releases frame resources promptly. Domain analyzers receive normalized context, not `VNObservation` objects. Thermal state and Low Power Mode reduce cadence, disable optional work, and may surface `unableToAssess`; critical thermal state stops optional analysis safely. MainActor only receives compact presentation snapshots.
 
+## Analysis scheduling foundation (Milestone 4)
+
+Milestone 4 introduces the runtime plumbing but **no Vision request, OCR, contrast measurement, analyzer implementation, candidate production, or user-facing finding**. `AnalysisCoordinator` is the focused camera-to-analysis boundary. It creates an opaque `AnalysisSessionID` whenever a visible, active, authorized Scan starts; ending Scan, backgrounding/inactivation, or replacing the session invalidates that ID and cancels current work. `ScanViewModel` owns this transient start/end decision, while `AppDependencies` connects the camera frame source to the coordinator. Neither navigation nor persistence owns analysis state.
+
+The video-output callback does only bounded metadata extraction: presentation timestamp, image-buffer dimensions, connection rotation angle, and mirror state. It immediately reduces that to an immutable, Sendable `AnalysisFrame` descriptor and releases the `CMSampleBuffer`; neither the coordinator nor scheduler retains an AVFoundation/CoreMedia image or sample buffer. Frame sequence is a scheduler-issued monotonic `UInt64`, including across session changes. `AnalysisImageOrientation` maps the output connection rotation/mirroring to `CGImagePropertyOrientation` semantics for a future Vision adapter; device/interface orientation changes must first be applied to the capture/preview connection, then the resulting output connection rotation supplies the analysis mapping. This mapping has deterministic tests.
+
+`AnalysisScheduler` is a lock-protected bounded state machine: exactly **one in-flight analyzer Task** and **one latest pending descriptor** are allowed. New frames during work replace the pending descriptor; no Task is made per frame and no capture-rate queue exists. When work completes, only the latest retained descriptor is considered. An injected performance policy admits work at conservative metadata-timestamp intervals (normal/fair: 0.75 seconds; serious thermal: 1.5 seconds; Low Power Mode: at least 1.5 seconds; critical thermal: suspend/cancel optional analysis). These values are admission controls, not performance claims. A central process-state monitor refreshes this policy on thermal and Low Power Mode notifications. Dropped/replaced-frame counters are transient diagnostic state, not user data.
+
+The scheduler gives each future `AccessibilityAnalyzer` an immutable `AnalysisContext` and accepts only framework-independent `AnalyzerOutput`: `NormalizedObservation` values and pre-stabilization `FindingCandidate` values. A candidate has no severity, compliance meaning, persistence behavior, or presentation path. One analyzer failure becomes a typed `AnalysisFailure` for that pass while remaining analyzers continue; cancellation and stale work produce no published pass. There is currently no output consumer—transient results are deliberately not placed in SwiftUI, navigation, UserDefaults, or persistence.
+
+The coordinator and scheduler use lock-protected mutable state and therefore declare their *container classes* `@unchecked Sendable`; this does not apply to AVFoundation/CoreMedia buffers, which never cross the capture callback. Analyzer protocol inputs/outputs are immutable `Sendable` metadata. The only analyzer Task is the bounded in-flight task, and it runs off the main actor. Result handlers receive compact values only after session/work-ID checks reject stale completion. OSLog categories record session/policy transitions, stale results, and analyzer failures without frame payloads or per-frame log spam.
+
 ### Analyzer boundary
 
 Future conceptual protocol:
@@ -80,7 +92,7 @@ protocol AccessibilityAnalyzer: Sendable {
 }
 ```
 
-Initial justified analyzers are `TextAnalyzer` and `TextLegibilityAnalyzer`; the latter consumes documented quality signals and produces review/assessment candidates, not a compliance verdict. `SignageAnalyzer` is deferred until a definition and evidence source exist. `ContrastAnalyzer` is deferred until constrained sampling and validation demonstrate defensible behavior. Each analyzer has isolated deterministic test fixtures and a versioned policy.
+Initial justified analyzers are `TextAnalyzer` and `TextLegibilityAnalyzer`; the latter consumes documented quality signals and produces review/assessment candidates, not a compliance verdict. They remain unimplemented until Milestone 5. `SignageAnalyzer` is deferred until a definition and evidence source exist. `ContrastAnalyzer` is deferred until constrained sampling and validation demonstrate defensible behavior. Each analyzer has isolated deterministic test fixtures and a versioned policy.
 
 ## Result stabilization
 

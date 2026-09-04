@@ -4,15 +4,18 @@ import UIKit
 struct ScanView: View {
     @StateObject private var viewModel: ScanViewModel
     @ObservedObject private var sessionController: CameraSessionController
+    @Environment(\.scenePhase) private var scenePhase
 
     init(
         authorizationService: any CameraAuthorizationProviding,
-        sessionController: CameraSessionController
+        sessionController: CameraSessionController,
+        analysisCoordinator: AnalysisCoordinator
     ) {
         _viewModel = StateObject(
             wrappedValue: ScanViewModel(
                 authorizationService: authorizationService,
-                sessionController: sessionController
+                sessionController: sessionController,
+                analysisCoordinator: analysisCoordinator
             )
         )
         _sessionController = ObservedObject(wrappedValue: sessionController)
@@ -41,6 +44,9 @@ struct ScanView: View {
         .navigationBarTitleDisplayMode(.inline)
         .onAppear { viewModel.appear() }
         .onDisappear { viewModel.disappear() }
+        .onChange(of: scenePhase, initial: true) { _, newPhase in
+            viewModel.handle(scenePhase: newPhase)
+        }
         .onChange(of: viewModel.authorization) { _, authorization in
             switch authorization {
             case .denied:
@@ -211,7 +217,8 @@ struct ScanView_Previews: PreviewProvider {
         NavigationStack {
             ScanView(
                 authorizationService: InMemoryCameraAuthorizationService(authorization: .denied),
-                sessionController: CameraSessionController()
+                sessionController: CameraSessionController(),
+                analysisCoordinator: AnalysisCoordinator()
             )
         }
     }

@@ -4,13 +4,13 @@ This is a living release gate. Milestone 0 establishes categories only; items ar
 
 | Area | Status | Release evidence required |
 |---|---|---|
-| Build | DEBUG CAMERA RUNTIME BUILD PASSED | 2026-09-04 Debug `xcodebuild` passed against an iPhone 17 Pro Simulator (iOS 26.5). A clean Release build remains required. |
-| Automated tests | FOUNDATION + CAMERA SUITES PASSED | `AccessLensTests`: 22 passed / 0 failed; `AccessLensUITests`: 4 passed / 0 failed on iPhone 17 Pro Simulator (iOS 26.5). Future focused and regression results remain required. |
+| Build | DEBUG ANALYSIS-FOUNDATION BUILD PASSED | 2026-09-04 Debug `xcodebuild` passed against an iPhone 17 Pro Simulator (iOS 26.5). A clean Release build remains required. |
+| Automated tests | FOUNDATION + CAMERA + ANALYSIS SUITES PASSED | `AccessLensTests`: 33 passed / 0 failed; `AccessLensUITests`: 4 passed / 0 failed on iPhone 17 Pro Simulator (iOS 26.5). Future focused and regression results remain required. |
 | Accessibility | ONBOARDING + SCAN FOUNDATION IMPLEMENTED | Onboarding and camera states use semantic headings, text-visible progress/status, Dynamic Type-friendly scroll layouts, Voice Control-friendly button labels, semantic colors, and practical touch targets. Manual audit remains required. |
-| Privacy | CAMERA DATA FLOW IMPLEMENTED; AUDIT PENDING | Camera frames remain in memory, have no registered analysis consumer, are not retained/uploaded, and no Photos/networking/accounts/analytics were added. Full privacy audit, retention disclosure, and future export consent/data preview remain required. |
+| Privacy | CAMERA + METADATA-ONLY ANALYSIS FOUNDATION; AUDIT PENDING | Camera callbacks reduce frames to transient orientation/timestamp/dimension metadata; no sample buffer is retained, persisted, or uploaded, and no Photos/networking/accounts/analytics were added. Full privacy audit, retention disclosure, and future export consent/data preview remain required. |
 | Camera permission | IMPLEMENTED; PHYSICAL QA PENDING | `NSCameraUsageDescription` is “AccessLens uses the camera to inspect your surroundings for potential accessibility barriers.” The app requests only from the explicit Enable Camera action and offers accessible denied/restricted guidance; physical-device permission, preview, interruption, and recovery validation remain required. |
 | Data retention | ARCHITECTURE DEFINED | Default no-image policy, deletion/rename behavior, optional-image disclosure, recovery and storage checks. |
-| Performance | CAMERA FOUNDATION IMPLEMENTED; DEVICE QA PENDING | Video output discards late frames, no analysis queue or image copies exist, and blocking session work is off the main thread. Validate long sessions, thermal, and Low Power Mode on physical hardware. |
+| Performance | BOUNDED ANALYSIS FOUNDATION IMPLEMENTED; DEVICE QA PENDING | Video output discards late frames; analysis permits one in-flight Task and one latest pending metadata descriptor, applies cadence/backpressure, cancels on session end, and adapts policy for thermal/Low Power Mode. Validate long sessions, thermal, and Low Power Mode on physical hardware. |
 | Physical-device validation | CAMERA QA REQUIRED | Intended initial support is iPhone on iOS 17.0+ in portrait, landscape left, and landscape right. Validate first permission, preview/orientation, leave-return, background-foreground, denied/Open Settings, interruption, longer sessions, accessibility, and future analyzer/export behavior. |
 | AppIcon | NOT STARTED | Required asset variants, rendering, and accessibility/brand review. |
 | Signing | NOT STARTED | Bundle identifier is `anoushka.AccessLens`; signing/archive configuration remains unverified. |
@@ -23,7 +23,7 @@ This is a living release gate. Milestone 0 establishes categories only; items ar
 - Device family: iPhone only.
 - App target bundle identifier: `anoushka.AccessLens`.
 - Test targets: `AccessLensTests` and `AccessLensUITests`.
-- Third-party dependencies, Vision processing, persistence, networking, analytics, accounts, Photos access, and camera-frame retention/upload: not introduced. Camera permission and local camera preview/runtime are implemented.
+- Third-party dependencies, Vision requests/processing, OCR, persistence, networking, analytics, accounts, Photos access, and camera-frame retention/upload: not introduced. Camera permission/runtime and metadata-only analysis scheduling are implemented.
 
 ## Milestone 2 manual accessibility validation
 

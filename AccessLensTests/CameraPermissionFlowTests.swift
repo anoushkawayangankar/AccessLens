@@ -23,7 +23,8 @@ final class CameraPermissionFlowTests: XCTestCase {
         )
         let viewModel = ScanViewModel(
             authorizationService: service,
-            sessionController: CameraSessionController()
+            sessionController: CameraSessionController(),
+            analysisCoordinator: AnalysisCoordinator()
         )
 
         await viewModel.requestCameraAccess()
