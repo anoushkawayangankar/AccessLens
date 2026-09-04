@@ -21,15 +21,31 @@ struct AppRootView: View {
                 OnboardingView(onboardingState: onboardingState)
             case .home:
                 NavigationStack(path: $navigator.path) {
-                    HomeView()
+                    HomeView {
+                        navigator.navigate(to: .scan)
+                    }
                         .navigationDestination(for: AppRoute.self) { route in
-                            FutureDestinationView(route: route)
+                            destination(for: route)
                         }
                 }
             }
         }
         .onChange(of: scenePhase, initial: true) { _, newPhase in
             dependencies.lifecycleCoordinator.handle(scenePhase: newPhase)
+            dependencies.cameraLifecycleCoordinator.handle(scenePhase: newPhase)
+        }
+    }
+
+    @ViewBuilder
+    private func destination(for route: AppRoute) -> some View {
+        switch route {
+        case .scan:
+            ScanView(
+                authorizationService: dependencies.cameraAuthorizationService,
+                sessionController: dependencies.cameraSessionController
+            )
+        default:
+            FutureDestinationView(route: route)
         }
     }
 }

@@ -30,9 +30,36 @@ final class AccessLensUITests: XCTestCase {
     }
 
     @MainActor
-    private func launchApp(onboardingState: String) -> XCUIApplication {
+    func testDeniedCameraShowsAccessibleSettingsGuidance() throws {
+        let app = launchApp(onboardingState: "complete", cameraAuthorization: "denied")
+
+        app.buttons["Start Scan"].tap()
+
+        XCTAssertTrue(app.staticTexts["scan-heading"].waitForExistence(timeout: 5))
+        XCTAssertTrue(app.otherElements["camera-denied-state"].waitForExistence(timeout: 2))
+        XCTAssertTrue(app.buttons["Open Settings"].exists)
+    }
+
+    @MainActor
+    func testAuthorizedLaunchEntersScanShellWithoutPretendingCameraWorksInSimulator() throws {
+        let app = launchApp(onboardingState: "complete", cameraAuthorization: "authorized")
+
+        app.buttons["Start Scan"].tap()
+
+        XCTAssertTrue(app.staticTexts["scan-heading"].waitForExistence(timeout: 5))
+        XCTAssertTrue(app.staticTexts["scan-foundation-message"].exists)
+    }
+
+    @MainActor
+    private func launchApp(
+        onboardingState: String,
+        cameraAuthorization: String? = nil
+    ) -> XCUIApplication {
         let app = XCUIApplication()
         app.launchArguments += ["-accesslens-onboarding-state", onboardingState]
+        if let cameraAuthorization {
+            app.launchArguments += ["-accesslens-camera-authorization", cameraAuthorization]
+        }
         app.launch()
         return app
     }

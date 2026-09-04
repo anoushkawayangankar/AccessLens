@@ -1,6 +1,12 @@
 import SwiftUI
 
 struct HomeView: View {
+    let onStartScan: () -> Void
+
+    init(onStartScan: @escaping () -> Void = {}) {
+        self.onStartScan = onStartScan
+    }
+
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: AppSpacing.large) {
@@ -21,6 +27,13 @@ struct HomeView: View {
                 }
 
                 FoundationStatusView()
+
+                Button("Start Scan") {
+                    onStartScan()
+                }
+                .buttonStyle(.borderedProminent)
+                .frame(maxWidth: .infinity, minHeight: AppLayout.minimumTouchTarget)
+                .accessibilityIdentifier("start-scan")
             }
             .frame(maxWidth: AppLayout.maximumReadableWidth, alignment: .leading)
             .padding(AppSpacing.page)

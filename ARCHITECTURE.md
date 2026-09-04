@@ -53,6 +53,16 @@ Severity communicates review priority, never truth or compliance. No “accessib
 
 The feature state machine will represent authorization, unavailable, configuring, running, interrupted, failed, and stopped states. It observes background/foreground transitions, audio/video interruptions, media-services reset, orientation, and unsupported hardware. UI does not own AVCaptureSession directly.
 
+## Camera runtime implementation (Milestone 3)
+
+`CameraAuthorizationService` maps `AVCaptureDevice` authorization into the product-ready `CameraAuthorizationState`; `ScanViewModel` owns permission-flow presentation and requests access only from the explicit Enable Camera action. `AppDependencies` composes this service with one application-scoped `CameraSessionController` and `CameraLifecycleCoordinator`. DEBUG launch arguments can substitute an in-memory authorization service for deterministic UI tests; this test-only service never supplies a camera feed and is not selectable from Release UI.
+
+`CameraSessionController` owns a single `AVCaptureSession`, a broadly available back-facing wide-angle camera input (with a back-facing discovery fallback), and one `AVCaptureVideoDataOutput`. All capture session mutation, lifecycle policy, and configuration execute on its dedicated serial session queue; compact `CameraSessionState` updates are delivered on the main actor. The output uses BGRA pixels and `alwaysDiscardsLateVideoFrames`; its delegate does no interpretation and hands buffers immediately to `CameraFrameSource`. No consumer is registered in this milestone, no frame is retained, and neither Vision nor analysis scheduling is present.
+
+The pure `CameraRuntimePolicy` permits the session to run only while Scan is visible, the application is active, authorization is granted, and the session is not interrupted. Repeated policy inputs are idempotent. Leaving Scan, becoming inactive/backgrounded, denial/restriction, and interruption stop or prevent the session. A media-services reset receives at most one recovery attempt; other runtime failures become a typed, presentation-safe unavailable state. `CameraPreview` bridges the controller-owned session through `AVCaptureVideoPreviewLayer`, uses aspect fill, and applies supported modern video rotation angles from the current interface orientation. Physical-device orientation and recovery behavior remain a release-gated validation item.
+
+The Scan surface hides the raw preview from VoiceOver and exposes text-first status and controls. It makes one-time accessibility announcements only for denied/restricted authorization, interruption, and unavailable-camera transitions; it does not announce configuration, camera-running status, frames, or future raw observations.
+
 ## Future Vision and analysis pipeline
 
 `AnalysisScheduler` accepts only a current session generation and uses latest-frame-wins behavior. It admits at most one (or a small documented bound of) in-flight analyses; frames arriving while busy replace/drop the pending frame. It sets a cadence based on scene state and device policy, rather than analyzing every capture frame. Each work item carries session generation, frame timestamp, orientation, and cancellation token. Results are rejected if cancelled, stale, from a prior camera generation, or superseded by newer user state.
