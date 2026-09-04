@@ -100,6 +100,10 @@ Adopt **SwiftData** as the planned primary local store, with a dedicated reposit
 
 Writes use one transaction to save a complete scan/finding snapshot; autosave is deliberate and debounced, never per frame. Failed writes preserve the in-memory scan and offer retry. On launch/import, decode/validate IDs, enum compatibility, reference integrity, and bounded fields. Quarantine unreadable/corrupt records, log non-sensitive diagnostics, and offer delete/recovery without crashing. Rename/delete operations are repository transactions. Avoid sync/cloud configuration until an explicit future product decision.
 
+## First-run onboarding preference
+
+The sole first-run preference is a non-sensitive, namespaced Boolean stored through an injectable `OnboardingCompletionStoring` boundary. Production composition uses `UserDefaults`; tests, previews, and DEBUG-only UI-test launch overrides use deterministic in-memory storage. `OnboardingState` is the only owner of this completion state and gates the root view before `NavigationStack`, so onboarding completion cannot leave a history entry. This preference is deliberately separate from the future SwiftData scan repository. Onboarding intentionally has no global Skip action: its privacy and limitation explanations are essential context before reaching the app shell.
+
 ## Image-retention policy
 
 Default: do not retain full camera images or raw frames. Saved findings retain textual/derived evidence and an optional normalized region descriptor without an image. A later explicit “attach image” user action may create a `CapturedSceneReference`; it must disclose retention, allow per-scan deletion, use app-managed safe filenames/private storage and appropriate iOS file protection, be excluded from reports unless chosen, and have storage/retention controls. No automatic background image capture.
@@ -208,4 +212,3 @@ Physical-iPhone validation is a release gate for real camera behavior/permission
 - No debug feature in Release UI; never weaken tests merely to pass; report PASS only when executed.
 - Mark physical-device-only checks as **USER VALIDATION REQUIRED** until actually performed.
 - At each future milestone: implement, run focused and relevant regression tests/builds, update docs, review git status, report for user review, commit only after approval, push only when explicitly instructed, then and only then begin the next milestone.
-

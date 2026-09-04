@@ -13,5 +13,5 @@ enum AppCornerRadius {
 
 enum AppLayout {
     static let maximumReadableWidth: CGFloat = 640
+    static let minimumTouchTarget: CGFloat = 44
 }
-

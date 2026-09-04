@@ -6,6 +6,7 @@
 |---|---|---|
 | 0 — Product definition + production architecture | **COMPLETE** | Scope/claims, architecture, models, policies, roadmap, and release foundation documented; no feature implementation. |
 | 1 — Production iOS application foundation | **COMPLETE** | App shell, typed navigation, composition root, lifecycle/logging/error boundaries, design/accessibility foundation, Xcode test targets, and hygiene established. Debug build and complete unit/UI suites passed on the documented iPhone Simulator. |
+| 2 — Onboarding + accessibility foundation | **COMPLETE** | First-run gate, injectable completion store, four-page accessible onboarding, deterministic UI-test launch states, and unit/UI coverage added. No camera, Vision, scanning, or permission functionality introduced. |
 
 ## Planned staged workflow
 
@@ -28,7 +29,8 @@ At the end of every milestone: complete its scoped implementation; run focused t
 ## Current implementation inventory
 
 - Foundation implementation: SwiftUI application shell, app-level typed navigation, dependency composition, lifecycle observation, OSLog categories, presentation-safe error value, design tokens, XCTest target, and UI-test target.
-- Camera/Vision/OCR/analysis/persistence/export/onboarding production implementation: **not started**.
+- Onboarding implementation: root-gated four-page first-run experience, injectable UserDefaults/in-memory completion store, accessibility-focused controls, and DEBUG-only deterministic test launch overrides.
+- Camera/Vision/OCR/analysis/persistence/export production implementation: **not started**.
 - Third-party dependencies introduced: **none**.
 - Deployment target: **iOS 17.0**.
 - Supported device family: **iPhone**. Supported orientations are portrait, landscape left, and landscape right to support future camera scanning without forcing a single orientation.
@@ -40,3 +42,11 @@ At the end of every milestone: complete its scoped implementation; run focused t
 - Debug build: **PASSED** using `xcodebuild` against that concrete Simulator on 2026-09-03.
 - Unit tests: **PASSED**, 4 passed / 0 failed / 0 skipped (`AccessLensTests`).
 - UI tests: **PASSED**, 1 passed / 0 failed / 0 skipped (`AccessLensUITests`).
+
+## Milestone 2 verification record
+
+- Simulator: **iPhone 17 Pro**, iOS Simulator 26.5, device ID `488A5CFD-DCA8-42B5-8AE9-346DBFBDEE14`.
+- Debug build: **PASSED** on 2026-09-04.
+- Unit tests: **PASSED**, 12 passed / 0 failed / 0 skipped (`AccessLensTests`).
+- UI tests: **PASSED**, 2 passed / 0 failed / 0 skipped (`AccessLensUITests`). The first-run flow reached the home shell without a camera permission dialog; the returning-user flow bypassed onboarding deterministically.
+- Manual accessibility validation: **USER VALIDATION REQUIRED** for VoiceOver, maximum Dynamic Type, Reduce Motion, Differentiate Without Color, Voice Control, Light/Dark Mode, smaller iPhone, and landscape.

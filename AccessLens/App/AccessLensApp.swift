@@ -2,7 +2,9 @@ import SwiftUI
 
 @main
 struct AccessLensApp: App {
-    @State private var dependencies = AppDependencies()
+    @State private var dependencies = AppDependencies.forApplicationLaunch(
+        arguments: ProcessInfo.processInfo.arguments
+    )
 
     var body: some Scene {
         WindowGroup {
@@ -10,4 +12,3 @@ struct AccessLensApp: App {
         }
     }
 }
-

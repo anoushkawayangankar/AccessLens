@@ -4,20 +4,29 @@ struct AppRootView: View {
     let dependencies: AppDependencies
 
     @ObservedObject private var navigator: AppNavigator
+    @ObservedObject private var onboardingState: OnboardingState
 
     @Environment(\.scenePhase) private var scenePhase
 
     init(dependencies: AppDependencies) {
         self.dependencies = dependencies
         _navigator = ObservedObject(wrappedValue: dependencies.navigator)
+        _onboardingState = ObservedObject(wrappedValue: dependencies.onboardingState)
     }
 
     var body: some View {
-        NavigationStack(path: $navigator.path) {
-            HomeView()
-                .navigationDestination(for: AppRoute.self) { route in
-                    FutureDestinationView(route: route)
+        Group {
+            switch onboardingState.destination {
+            case .onboarding:
+                OnboardingView(onboardingState: onboardingState)
+            case .home:
+                NavigationStack(path: $navigator.path) {
+                    HomeView()
+                        .navigationDestination(for: AppRoute.self) { route in
+                            FutureDestinationView(route: route)
+                        }
                 }
+            }
         }
         .onChange(of: scenePhase, initial: true) { _, newPhase in
             dependencies.lifecycleCoordinator.handle(scenePhase: newPhase)

@@ -4,9 +4,9 @@ This is a living release gate. Milestone 0 establishes categories only; items ar
 
 | Area | Status | Release evidence required |
 |---|---|---|
-| Build | DEBUG FOUNDATION BUILD PASSED | 2026-09-03 Debug `xcodebuild` passed against an iPhone 17 Pro Simulator (iOS 26.5). A clean Release build remains required. |
-| Automated tests | FOUNDATION SUITES PASSED | `AccessLensTests`: 4 passed / 0 failed; `AccessLensUITests`: 1 passed / 0 failed on iPhone 17 Pro Simulator (iOS 26.5). Future focused and regression results remain required. |
-| Accessibility | FOUNDATION IMPLEMENTED | Root shell uses Dynamic Type/system semantics, text-first content, semantic colors, logical grouping, and no color-only state. Full audit remains required. |
+| Build | DEBUG ONBOARDING BUILD PASSED | 2026-09-04 Debug `xcodebuild` passed against an iPhone 17 Pro Simulator (iOS 26.5). A clean Release build remains required. |
+| Automated tests | FOUNDATION SUITES PASSED | `AccessLensTests`: 12 passed / 0 failed; `AccessLensUITests`: 2 passed / 0 failed on iPhone 17 Pro Simulator (iOS 26.5). Future focused and regression results remain required. |
+| Accessibility | ONBOARDING FOUNDATION IMPLEMENTED | Onboarding uses text-visible progress, semantic headings, Dynamic Type-friendly scrolling/stacking controls, Reduce Motion-aware transitions, Voice Control-friendly labels, semantic colors, and practical touch targets. Manual audit remains required. |
 | Privacy | ARCHITECTURE DEFINED | Verify no analysis uploads, no tracking/accounts/networking, retention disclosure, and export consent/data preview. |
 | Camera permission | NOT STARTED | No usage description or permission request is present. Purpose text, denied/restricted/unavailable recovery, and physical-device permission paths remain required. |
 | Data retention | ARCHITECTURE DEFINED | Default no-image policy, deletion/rename behavior, optional-image disclosure, recovery and storage checks. |
@@ -24,6 +24,10 @@ This is a living release gate. Milestone 0 establishes categories only; items ar
 - App target bundle identifier: `anoushka.AccessLens`.
 - Test targets: `AccessLensTests` and `AccessLensUITests`.
 - Third-party dependencies, camera permission, camera/Vision processing, persistence, networking, analytics, and accounts: not introduced.
+
+## Milestone 2 manual accessibility validation
+
+**USER VALIDATION REQUIRED:** verify the full onboarding flow with VoiceOver; at maximum Dynamic Type; with Reduce Motion and Differentiate Without Color enabled; using Voice Control commands for Back, Continue, and Continue to AccessLens; in Light and Dark Mode; on a smaller supported iPhone; and in each supported landscape orientation. Confirm reading order, progress wording, focus after each user-initiated page change, scrolling, reachable controls, and the absence of a camera permission dialog.
 
 ## Production-complete definition
 
