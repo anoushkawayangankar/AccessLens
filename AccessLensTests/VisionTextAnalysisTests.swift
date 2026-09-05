@@ -213,7 +213,7 @@ private actor LateTextAnalyzer: AccessibilityAnalyzer {
     private var invoked = false
     private var waiters: [CheckedContinuation<Void, Never>] = []
 
-    func analyze(_ context: AnalysisContext) async throws -> AnalyzerOutput {
+    func analyze(_ context: AnalysisContext, priorOutput _: AnalyzerOutput) async throws -> AnalyzerOutput {
         invoked = true
         waiters.forEach { $0.resume() }
         waiters.removeAll()
@@ -239,7 +239,7 @@ private actor CancellableTextAnalyzer: AccessibilityAnalyzer {
     private var invocationWaiters: [CheckedContinuation<Void, Never>] = []
     private var cancellationWaiters: [CheckedContinuation<Void, Never>] = []
 
-    func analyze(_ context: AnalysisContext) async throws -> AnalyzerOutput {
+    func analyze(_ context: AnalysisContext, priorOutput _: AnalyzerOutput) async throws -> AnalyzerOutput {
         invoked = true
         invocationWaiters.forEach { $0.resume() }
         invocationWaiters.removeAll()
@@ -271,7 +271,7 @@ private actor CancellableTextAnalyzer: AccessibilityAnalyzer {
 private actor FailingTextAnalyzer: AccessibilityAnalyzer {
     nonisolated let identifier = AnalyzerIdentifier(rawValue: "test.failing-text")
 
-    func analyze(_ context: AnalysisContext) async throws -> AnalyzerOutput {
+    func analyze(_ context: AnalysisContext, priorOutput _: AnalyzerOutput) async throws -> AnalyzerOutput {
         throw AnalysisError.analyzerFailed(identifier)
     }
 }

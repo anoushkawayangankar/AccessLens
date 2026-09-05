@@ -92,7 +92,7 @@ protocol AccessibilityAnalyzer: Sendable {
 }
 ```
 
-Initial justified analyzers are `VisionTextAnalyzer` and a future `TextLegibilityAnalyzer`; the latter consumes documented quality signals and produces review/assessment candidates, not a compliance verdict. `VisionTextAnalyzer` is implemented in Milestone 5 as the sole real Vision request. It uses `VNRecognizeTextRequest` at the scheduler's conservative cadence, maps OCR output to `RecognizedTextObservation`, and applies a small, conservative signage-keyword classifier. `SignageAnalyzer` as a separate semantic engine remains deferred. `ContrastAnalyzer` is deferred until constrained sampling and validation demonstrate defensible behavior. Each analyzer has isolated deterministic test fixtures and a versioned policy.
+Initial justified analyzers are `VisionTextAnalyzer`, `VisualContrastAnalyzer`, and a future `TextLegibilityAnalyzer`; the latter consumes documented quality signals and produces review/assessment candidates, not a compliance verdict. `VisionTextAnalyzer` is implemented in Milestone 5 as the sole real Vision request. It uses `VNRecognizeTextRequest` at the scheduler's conservative cadence, maps OCR output to `RecognizedTextObservation`, and applies a small, conservative signage-keyword classifier. `VisualContrastAnalyzer` is implemented in Milestone 6 as a dependent analyzer that consumes only same-frame OCR observations that already produced environmental-signage candidates. `SignageAnalyzer` as a separate semantic engine remains deferred. Each analyzer has isolated deterministic test fixtures and a versioned policy.
 
 ## On-device text and signage analyzer (Milestone 5)
 
@@ -105,6 +105,16 @@ The scheduler now holds an immutable `AnalysisFramePayload` only for its bounded
 `SignageCandidateClassifier` recognizes only bounded, high-enough-confidence environmental-sign wording (`EXIT`, `ENTRANCE`, `RESTROOM`, `TOILET`, `ACCESSIBLE`, `ACCESS`, `ELEVATOR`, `LIFT`, `STAIRS`, `EMERGENCY`, `PUSH`, `PULL`, `FLOOR`, and `ROOM`, including selected phrases such as “Emergency Exit”). A match creates a transient `.environmentalSignage` candidate, not a barrier, severity, accessibility finding, or compliance claim. `ScanViewModel` owns a maximum-four, eight-second transient candidate list and deduplicates text case-insensitively with spatial intersection-over-union before publishing a compact presentation snapshot. New distinct candidates receive one VoiceOver announcement; repeated OCR does not. Ending or invalidating a scan clears this entire live state.
 
 The Scan view shows only real, transient “Recent signage observations” from those candidates plus limitation language. It includes no bounding overlay because physical-device coordinate accuracy has not yet been validated. Findings stabilization, confidence policy, severity, remediation, saved scans, and reporting remain later work.
+
+## On-device visual contrast analyzer (Milestone 6)
+
+`VisualContrastAnalyzer` follows `VisionTextAnalyzer` in the existing analyzer sequence. The scheduler provides accumulated same-frame output to each analyzer, so contrast uses only real text observations that already originated an `.environmentalSignage` candidate; it does not inspect arbitrary full-frame contrast. It receives the existing bounded `AnalysisFramePayload`, validates the OCR region, maps the top-left oriented normalized region through `AnalysisImageOrientation` back into a clamped raw-buffer crop, and samples at most 1,024 BGRA pixels directly from that crop. The pixel buffer is read synchronously off the main actor and unlocked before the analyzer returns; no crop, `CIImage`, sample array, or frame is retained/persisted/uploaded.
+
+The calculation converts sRGB values to relative luminance using IEC linearization and coefficients 0.2126 / 0.7152 / 0.0722. To reduce single-pixel glare/noise influence, it estimates lower and higher luminance using the medians of the lower and upper quartiles after sorting samples—not the darkest and brightest individual pixels. It calculates the image-space ratio as `(Llighter + 0.05) / (Ldarker + 0.05)`. This is explicitly an **estimated text/background contrast from a camera image**, not a material, display, or laboratory measurement. Exposure, HDR, white balance, glare, shadows, blur, angle, reflectivity, and OCR-region uncertainty can invalidate its semantic meaning.
+
+`ContrastObservation` is a compact framework-independent value containing source text ID, session/frame/timestamp, normalized region, lower/higher luminance estimates, estimated ratio, and evidence quality. Evidence is `insufficient`, `low`, or `usable`, determined by bounded sample count, crop size, and luminance separation. Only usable evidence is interpreted. The central heuristic classifies a ratio below 3.0 as `potentiallyLow`, 3.0–4.5 as `borderline`, and greater estimates as `likelyAdequate`; these bands are explanatory heuristics only, avoid text-size assumptions, and are never a WCAG/ADA/legal conformance decision. Only `potentiallyLow` creates a `.potentialLowContrastText` candidate.
+
+`ScanViewModel` owns `TransientContrastCandidateStabilizer`, a maximum-three, eight-second, text-and-region deduplicated window requiring two matching usable estimates before presentation or one VoiceOver announcement. The Scan card says “Potential low contrast,” shows the recognized sign and explicitly labeled estimated ratio, and repeats the camera-limitations/non-compliance language. It uses system semantic presentation without color-only state and introduces no animation. Critical thermal state continues to suspend the existing whole analysis pass; serious thermal and Low Power Mode keep the existing reduced cadence. Physical iPhone validation for image estimate quality, orientation, glare, shadows, motion, and accessibility remains a release gate.
 
 ## Result stabilization
 
@@ -225,7 +235,7 @@ Organize by feature first and place reusable, platform-facing capabilities in `C
 | App/root navigation coordinator (`@MainActor`) | app route, modal route, onboarding completion routing—not data stores. |
 | Camera session controller | capture authorization/session/lifecycle state. |
 | Live analysis session actor | generation ID, scheduler, analyzer tasks, bounded opaque frame payload, and transient raw observations. |
-| Scan feature view model (`@MainActor`) | compact presentation snapshot, bounded transient signage deduplication, VoiceOver deduplication, and user actions, derived from the live session. |
+| Scan feature view model (`@MainActor`) | compact presentation snapshot, bounded transient signage/contrast deduplication, VoiceOver deduplication, and user actions, derived from the live session. |
 | Scan repository | saved scan records and transactions. |
 | Accessibility announcement coordinator (`@MainActor`) | coalescing/rate limit/deduplication of spoken announcements. |
 

@@ -252,7 +252,7 @@ private actor ImmediateAnalyzer: AccessibilityAnalyzer {
     nonisolated let identifier = AnalyzerIdentifier(rawValue: "test.immediate")
     private(set) var invokedSequences: [UInt64] = []
 
-    func analyze(_ context: AnalysisContext) async throws -> AnalyzerOutput {
+    func analyze(_ context: AnalysisContext, priorOutput _: AnalyzerOutput) async throws -> AnalyzerOutput {
         invokedSequences.append(context.frame.sequence.rawValue)
         return .empty
     }
@@ -261,7 +261,7 @@ private actor ImmediateAnalyzer: AccessibilityAnalyzer {
 private actor FailingAnalyzer: AccessibilityAnalyzer {
     nonisolated let identifier = AnalyzerIdentifier(rawValue: "test.failing")
 
-    func analyze(_ context: AnalysisContext) async throws -> AnalyzerOutput {
+    func analyze(_ context: AnalysisContext, priorOutput _: AnalyzerOutput) async throws -> AnalyzerOutput {
         throw AnalysisError.analyzerFailed(identifier)
     }
 }
@@ -282,7 +282,7 @@ private actor GateAnalyzer: AccessibilityAnalyzer {
         self.honorsCancellation = honorsCancellation
     }
 
-    func analyze(_ context: AnalysisContext) async throws -> AnalyzerOutput {
+    func analyze(_ context: AnalysisContext, priorOutput _: AnalyzerOutput) async throws -> AnalyzerOutput {
         let sequence = context.frame.sequence.rawValue
         invokedSequences.append(sequence)
         invocationWaiters.removeValue(forKey: sequence)?.forEach { $0.resume() }

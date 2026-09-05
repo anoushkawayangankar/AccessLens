@@ -26,6 +26,7 @@ final class ScanViewModel: ObservableObject {
     @Published private(set) var settingsCouldNotOpen = false
     @Published private(set) var isAnalyzingEnvironment = false
     @Published private(set) var recentSignageCandidates: [FindingCandidate] = []
+    @Published private(set) var recentContrastCandidates: [FindingCandidate] = []
 
     private let authorizationService: any CameraAuthorizationProviding
     private let sessionController: CameraSessionController
@@ -35,6 +36,7 @@ final class ScanViewModel: ObservableObject {
     private var hasActiveAnalysisSession = false
     private var activeAnalysisSessionID: AnalysisSessionID?
     private var signageDeduplicator = TransientSignageDeduplicator()
+    private var contrastStabilizer = TransientContrastCandidateStabilizer()
 
     init(
         authorizationService: any CameraAuthorizationProviding,
@@ -100,12 +102,16 @@ final class ScanViewModel: ObservableObject {
             let sessionID = analysisCoordinator.beginSession()
             activeAnalysisSessionID = sessionID
             signageDeduplicator.reset()
+            contrastStabilizer.reset()
             recentSignageCandidates = []
+            recentContrastCandidates = []
             isAnalyzingEnvironment = true
         } else {
             activeAnalysisSessionID = nil
             signageDeduplicator.reset()
+            contrastStabilizer.reset()
             recentSignageCandidates = []
+            recentContrastCandidates = []
             isAnalyzingEnvironment = false
             analysisCoordinator.endSession()
         }
@@ -113,14 +119,27 @@ final class ScanViewModel: ObservableObject {
 
     private func receive(_ result: AnalysisPassResult) {
         guard activeAnalysisSessionID == result.sessionID else { return }
-        let additions = signageDeduplicator.ingest(
+        let currentTime = result.candidates.compactMap(\.presentationTimeSeconds).max()
+        let signageAdditions = signageDeduplicator.ingest(
             result.candidates,
             sessionID: result.sessionID,
-            currentTime: result.candidates.compactMap(\.presentationTimeSeconds).max()
+            currentTime: currentTime
+        )
+        let contrastAdditions = contrastStabilizer.ingest(
+            result.candidates,
+            sessionID: result.sessionID,
+            currentTime: currentTime
         )
         recentSignageCandidates = signageDeduplicator.candidates
+        recentContrastCandidates = contrastStabilizer.candidates
 
-        guard let announcement = additions.first?.recognizedText else { return }
-        UIAccessibility.post(notification: .announcement, argument: "Signage detected: \(announcement)")
+        if let announcement = contrastAdditions.first?.recognizedText {
+            UIAccessibility.post(
+                notification: .announcement,
+                argument: "Potential low estimated contrast: \(announcement)"
+            )
+        } else if let announcement = signageAdditions.first?.recognizedText {
+            UIAccessibility.post(notification: .announcement, argument: "Signage detected: \(announcement)")
+        }
     }
 }

@@ -1,7 +1,12 @@
-/// A narrow, independently testable future-analysis boundary. This milestone
-/// supplies no production analyzers and performs no Vision request.
+/// A narrow, independently testable analyzer boundary. Analyzers run in their
+/// configured order and receive compact prior output from the same admitted
+/// frame, allowing an evidence-dependent analyzer (for example contrast) to
+/// operate on real OCR regions without re-running OCR or touching SwiftUI.
 nonisolated protocol AccessibilityAnalyzer: Sendable {
     var identifier: AnalyzerIdentifier { get }
 
-    func analyze(_ context: AnalysisContext) async throws -> AnalyzerOutput
+    func analyze(
+        _ context: AnalysisContext,
+        priorOutput: AnalyzerOutput
+    ) async throws -> AnalyzerOutput
 }

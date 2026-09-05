@@ -158,6 +158,65 @@ nonisolated struct RecognizedTextObservation: Identifiable, Equatable, Sendable,
     }
 }
 
+/// A bounded, camera-image estimate around a real OCR region. Its ratio is
+/// evidence from the captured image, not a display/material measurement or a
+/// compliance result.
+nonisolated struct ContrastObservation: Identifiable, Equatable, Sendable, Hashable {
+    let id: UUID
+    let analyzerID: AnalyzerIdentifier
+    let sourceTextObservationID: UUID
+    let sessionID: AnalysisSessionID
+    let frameSequence: AnalysisFrameSequence
+    let presentationTimeSeconds: Double?
+    let region: NormalizedRegion
+    let lowerLuminanceEstimate: Double
+    let higherLuminanceEstimate: Double
+    let estimatedContrastRatio: ContrastRatio
+    let evidenceQuality: ContrastEvidenceQuality
+
+    init(
+        id: UUID = UUID(),
+        analyzerID: AnalyzerIdentifier,
+        sourceTextObservationID: UUID,
+        sessionID: AnalysisSessionID,
+        frameSequence: AnalysisFrameSequence,
+        presentationTimeSeconds: Double?,
+        region: NormalizedRegion,
+        lowerLuminanceEstimate: Double,
+        higherLuminanceEstimate: Double,
+        estimatedContrastRatio: ContrastRatio,
+        evidenceQuality: ContrastEvidenceQuality
+    ) {
+        self.id = id
+        self.analyzerID = analyzerID
+        self.sourceTextObservationID = sourceTextObservationID
+        self.sessionID = sessionID
+        self.frameSequence = frameSequence
+        self.presentationTimeSeconds = presentationTimeSeconds
+        self.region = region
+        self.lowerLuminanceEstimate = lowerLuminanceEstimate
+        self.higherLuminanceEstimate = higherLuminanceEstimate
+        self.estimatedContrastRatio = estimatedContrastRatio
+        self.evidenceQuality = evidenceQuality
+    }
+}
+
+nonisolated struct ContrastRatio: Equatable, Sendable, Hashable {
+    let value: Double
+
+    init(lighterLuminance: Double, darkerLuminance: Double) {
+        let lighter = max(lighterLuminance, darkerLuminance)
+        let darker = min(lighterLuminance, darkerLuminance)
+        value = (lighter + 0.05) / (darker + 0.05)
+    }
+}
+
+nonisolated enum ContrastEvidenceQuality: String, Equatable, Sendable, Hashable {
+    case insufficient
+    case low
+    case usable
+}
+
 /// Framework-independent output. Future Vision adapters convert framework
 /// observations here before domain or stabilization logic sees them.
 nonisolated struct NormalizedObservation: Identifiable, Equatable, Sendable, Hashable {
@@ -202,6 +261,8 @@ nonisolated struct FindingCandidate: Identifiable, Equatable, Sendable, Hashable
     let rawFrameworkConfidence: Double?
     let presentationTimeSeconds: Double?
     let sourceAnalyzerID: AnalyzerIdentifier
+    let estimatedContrastRatio: ContrastRatio?
+    let contrastEvidenceQuality: ContrastEvidenceQuality?
 
     init(
         id: UUID = UUID(),
@@ -214,7 +275,9 @@ nonisolated struct FindingCandidate: Identifiable, Equatable, Sendable, Hashable
         recognizedText: String? = nil,
         rawFrameworkConfidence: Double? = nil,
         presentationTimeSeconds: Double? = nil,
-        sourceAnalyzerID: AnalyzerIdentifier = AnalyzerIdentifier(rawValue: "unknown")
+        sourceAnalyzerID: AnalyzerIdentifier = AnalyzerIdentifier(rawValue: "unknown"),
+        estimatedContrastRatio: ContrastRatio? = nil,
+        contrastEvidenceQuality: ContrastEvidenceQuality? = nil
     ) {
         self.id = id
         self.sessionID = sessionID
@@ -227,6 +290,8 @@ nonisolated struct FindingCandidate: Identifiable, Equatable, Sendable, Hashable
         self.rawFrameworkConfidence = rawFrameworkConfidence
         self.presentationTimeSeconds = presentationTimeSeconds
         self.sourceAnalyzerID = sourceAnalyzerID
+        self.estimatedContrastRatio = estimatedContrastRatio
+        self.contrastEvidenceQuality = contrastEvidenceQuality
     }
 }
 
@@ -235,20 +300,24 @@ nonisolated struct FindingCandidate: Identifiable, Equatable, Sendable, Hashable
 nonisolated enum FindingCandidateCategory: String, Equatable, Sendable, Hashable {
     case unclassified
     case environmentalSignage
+    case potentialLowContrastText
 }
 
 nonisolated struct AnalyzerOutput: Equatable, Sendable {
     let observations: [NormalizedObservation]
     let textObservations: [RecognizedTextObservation]
+    let contrastObservations: [ContrastObservation]
     let candidates: [FindingCandidate]
 
     init(
         observations: [NormalizedObservation] = [],
         textObservations: [RecognizedTextObservation] = [],
+        contrastObservations: [ContrastObservation] = [],
         candidates: [FindingCandidate] = []
     ) {
         self.observations = observations
         self.textObservations = textObservations
+        self.contrastObservations = contrastObservations
         self.candidates = candidates
     }
 
@@ -257,6 +326,11 @@ nonisolated struct AnalyzerOutput: Equatable, Sendable {
 
 nonisolated enum AnalysisError: Error, Equatable, Sendable {
     case invalidFrame
+    case invalidRegion
+    case insufficientPixels
+    case invalidImageBuffer
+    case unsupportedPixelFormat
+    case insufficientEvidence
     case unsupportedOrientation
     case analyzerFailed(AnalyzerIdentifier)
     case cancelled
@@ -273,6 +347,7 @@ nonisolated struct AnalysisPassResult: Equatable, Sendable {
     let frameSequence: AnalysisFrameSequence
     let observations: [NormalizedObservation]
     let textObservations: [RecognizedTextObservation]
+    let contrastObservations: [ContrastObservation]
     let candidates: [FindingCandidate]
     let failures: [AnalysisFailure]
 }

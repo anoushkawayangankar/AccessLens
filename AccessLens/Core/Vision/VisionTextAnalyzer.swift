@@ -53,7 +53,10 @@ nonisolated final class VisionTextAnalyzer: AccessibilityAnalyzer {
         self.signageClassifier = signageClassifier
     }
 
-    func analyze(_ context: AnalysisContext) async throws -> AnalyzerOutput {
+    func analyze(
+        _ context: AnalysisContext,
+        priorOutput _: AnalyzerOutput
+    ) async throws -> AnalyzerOutput {
         try Task.checkCancellation()
         guard let payload = context.payload else {
             throw AnalysisError.invalidFrame

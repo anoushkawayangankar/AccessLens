@@ -220,6 +220,7 @@ nonisolated final class AnalysisScheduler: @unchecked Sendable {
                 frameSequence: frame.sequence,
                 observations: output.observations,
                 textObservations: output.textObservations,
+                contrastObservations: output.contrastObservations,
                 candidates: output.candidates,
                 failures: output.failures
             )
@@ -242,6 +243,7 @@ nonisolated final class AnalysisScheduler: @unchecked Sendable {
     ) async -> AnalysisExecution {
         var observations: [NormalizedObservation] = []
         var textObservations: [RecognizedTextObservation] = []
+        var contrastObservations: [ContrastObservation] = []
         var candidates: [FindingCandidate] = []
         var failures: [AnalysisFailure] = []
 
@@ -251,12 +253,19 @@ nonisolated final class AnalysisScheduler: @unchecked Sendable {
             }
 
             do {
-                let output = try await analyzer.analyze(context)
+                let priorOutput = AnalyzerOutput(
+                    observations: observations,
+                    textObservations: textObservations,
+                    contrastObservations: contrastObservations,
+                    candidates: candidates
+                )
+                let output = try await analyzer.analyze(context, priorOutput: priorOutput)
                 if Task.isCancelled {
                     return .cancelled
                 }
                 observations.append(contentsOf: output.observations)
                 textObservations.append(contentsOf: output.textObservations)
+                contrastObservations.append(contentsOf: output.contrastObservations)
                 candidates.append(contentsOf: output.candidates)
             } catch is CancellationError {
                 return .cancelled
@@ -274,6 +283,7 @@ nonisolated final class AnalysisScheduler: @unchecked Sendable {
         return .completed(AnalysisExecutionOutput(
             observations: observations,
             textObservations: textObservations,
+            contrastObservations: contrastObservations,
             candidates: candidates,
             failures: failures
         ))
@@ -288,6 +298,7 @@ private enum AnalysisExecution {
 private struct AnalysisExecutionOutput {
     let observations: [NormalizedObservation]
     let textObservations: [RecognizedTextObservation]
+    let contrastObservations: [ContrastObservation]
     let candidates: [FindingCandidate]
     let failures: [AnalysisFailure]
 }

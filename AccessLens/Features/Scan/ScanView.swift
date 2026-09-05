@@ -39,6 +39,10 @@ struct ScanView: View {
                 if !viewModel.recentSignageCandidates.isEmpty {
                     signageResults
                 }
+
+                if !viewModel.recentContrastCandidates.isEmpty {
+                    contrastResults
+                }
             }
             .frame(maxWidth: AppLayout.maximumReadableWidth, alignment: .leading)
             .padding(AppSpacing.page)
@@ -216,6 +220,38 @@ struct ScanView: View {
         .frame(maxWidth: .infinity, alignment: .leading)
         .background(.quaternary, in: RoundedRectangle(cornerRadius: AppCornerRadius.card, style: .continuous))
         .accessibilityIdentifier("recent-signage-observations")
+    }
+
+    private var contrastResults: some View {
+        VStack(alignment: .leading, spacing: AppSpacing.small) {
+            Label("Potential low contrast", systemImage: "circle.lefthalf.filled")
+                .font(.headline)
+                .accessibilityAddTraits(.isHeader)
+
+            ForEach(viewModel.recentContrastCandidates) { candidate in
+                VStack(alignment: .leading, spacing: AppSpacing.small) {
+                    if let text = candidate.recognizedText {
+                        Text(text)
+                            .font(.body.weight(.semibold))
+                    }
+                    if let ratio = candidate.estimatedContrastRatio {
+                        Text("Estimated text/background contrast: \(ratio.value, format: .number.precision(.fractionLength(1))):1")
+                            .font(.body)
+                    }
+                    Text("This camera-based estimate may be affected by lighting, glare, exposure, and viewing angle. Verify in person; it is not a compliance result.")
+                        .font(.footnote)
+                        .foregroundStyle(.secondary)
+                }
+                .padding(AppSpacing.small)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .background(.tertiary, in: RoundedRectangle(cornerRadius: AppCornerRadius.card, style: .continuous))
+                .accessibilityElement(children: .combine)
+            }
+        }
+        .padding(AppSpacing.medium)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(.quaternary, in: RoundedRectangle(cornerRadius: AppCornerRadius.card, style: .continuous))
+        .accessibilityIdentifier("potential-low-contrast-observations")
     }
 
     private func statusContainer<Content: View>(
