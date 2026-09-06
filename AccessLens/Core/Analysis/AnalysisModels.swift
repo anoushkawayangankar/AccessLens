@@ -261,6 +261,10 @@ nonisolated struct FindingCandidate: Identifiable, Equatable, Sendable, Hashable
     let rawFrameworkConfidence: Double?
     let presentationTimeSeconds: Double?
     let sourceAnalyzerID: AnalyzerIdentifier
+    /// All analyzers that contributed direct evidence to this candidate. This
+    /// stays compact and framework-independent so a later finding can explain
+    /// multi-analyzer provenance without retaining an image or framework type.
+    let sourceAnalyzerIDs: [AnalyzerIdentifier]
     let estimatedContrastRatio: ContrastRatio?
     let contrastEvidenceQuality: ContrastEvidenceQuality?
 
@@ -276,6 +280,7 @@ nonisolated struct FindingCandidate: Identifiable, Equatable, Sendable, Hashable
         rawFrameworkConfidence: Double? = nil,
         presentationTimeSeconds: Double? = nil,
         sourceAnalyzerID: AnalyzerIdentifier = AnalyzerIdentifier(rawValue: "unknown"),
+        sourceAnalyzerIDs: [AnalyzerIdentifier]? = nil,
         estimatedContrastRatio: ContrastRatio? = nil,
         contrastEvidenceQuality: ContrastEvidenceQuality? = nil
     ) {
@@ -290,6 +295,8 @@ nonisolated struct FindingCandidate: Identifiable, Equatable, Sendable, Hashable
         self.rawFrameworkConfidence = rawFrameworkConfidence
         self.presentationTimeSeconds = presentationTimeSeconds
         self.sourceAnalyzerID = sourceAnalyzerID
+        self.sourceAnalyzerIDs = Array(Set(sourceAnalyzerIDs ?? [sourceAnalyzerID]))
+            .sorted { $0.rawValue < $1.rawValue }
         self.estimatedContrastRatio = estimatedContrastRatio
         self.contrastEvidenceQuality = contrastEvidenceQuality
     }

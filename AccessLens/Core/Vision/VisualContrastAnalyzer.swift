@@ -93,6 +93,7 @@ nonisolated final class VisualContrastAnalyzer: AccessibilityAnalyzer {
                         rawFrameworkConfidence: textObservation.rawFrameworkConfidence,
                         presentationTimeSeconds: textObservation.presentationTimeSeconds,
                         sourceAnalyzerID: identifier,
+                        sourceAnalyzerIDs: [textObservation.analyzerID, identifier],
                         estimatedContrastRatio: measurement.ratio,
                         contrastEvidenceQuality: measurement.evidenceQuality
                     ))

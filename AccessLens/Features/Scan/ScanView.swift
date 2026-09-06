@@ -9,13 +9,17 @@ struct ScanView: View {
     init(
         authorizationService: any CameraAuthorizationProviding,
         sessionController: CameraSessionController,
-        analysisCoordinator: AnalysisCoordinator
+        analysisCoordinator: AnalysisCoordinator,
+        initialFindings: [AccessibilityFinding] = [],
+        forceAnalysisPresentation: Bool = false
     ) {
         _viewModel = StateObject(
             wrappedValue: ScanViewModel(
                 authorizationService: authorizationService,
                 sessionController: sessionController,
-                analysisCoordinator: analysisCoordinator
+                analysisCoordinator: analysisCoordinator,
+                initialFindings: initialFindings,
+                forceAnalysisPresentation: forceAnalysisPresentation
             )
         )
         _sessionController = ObservedObject(wrappedValue: sessionController)
@@ -36,12 +40,8 @@ struct ScanView: View {
                     .font(.body)
                     .accessibilityIdentifier("scan-foundation-message")
 
-                if !viewModel.recentSignageCandidates.isEmpty {
-                    signageResults
-                }
-
-                if !viewModel.recentContrastCandidates.isEmpty {
-                    contrastResults
+                if viewModel.shouldPresentAnalysisFoundation {
+                    findingsSection
                 }
             }
             .frame(maxWidth: AppLayout.maximumReadableWidth, alignment: .leading)
@@ -166,7 +166,7 @@ struct ScanView: View {
         case .running:
             statusContainer(
                 title: viewModel.isAnalyzingEnvironment ? "Analyzing environment" : "Camera ready",
-                message: "Point your camera at visible signs. AccessLens presents text and signage observations, not accessibility certification.",
+                message: "Point your camera at visible signs. AccessLens presents potential findings only when repeated evidence is usable; it does not certify accessibility.",
                 symbolName: "text.viewfinder"
             )
         case .interrupted:
@@ -187,71 +187,66 @@ struct ScanView: View {
 
     private var analysisSummary: String {
         if viewModel.isAnalyzingEnvironment {
-            return "AccessLens analyzes visible text and environmental signage on this device. Results can be uncertain and should be verified in person."
+            return "AccessLens analyzes visible text and environmental signage on this device. Potential findings require repeated usable evidence and should be verified in person."
         }
         return "Camera analysis starts when camera input is available. AccessLens does not certify accessibility or legal compliance."
     }
 
-    private var signageResults: some View {
+    private var findingsSection: some View {
         VStack(alignment: .leading, spacing: AppSpacing.small) {
-            Label("Recent signage observations", systemImage: "signpost.right")
+            Label("Potential findings", systemImage: "exclamationmark.magnifyingglass")
                 .font(.headline)
                 .accessibilityAddTraits(.isHeader)
 
-            ForEach(viewModel.recentSignageCandidates) { candidate in
+            if viewModel.activeFindings.isEmpty {
                 VStack(alignment: .leading, spacing: AppSpacing.small) {
-                    Text("Signage detected")
-                        .font(.subheadline.weight(.semibold))
-                    if let text = candidate.recognizedText {
-                        Text(text)
-                            .font(.body)
-                    }
-                    Text("Potential text observation. Verify it in person.")
+                    Text("No potential issues identified yet.")
+                        .font(.body)
+                        // This semantic label, rather than a layout coordinate,
+                        // is the stable entry point for the empty-state UI test.
+                        .accessibilityIdentifier("no-potential-findings")
+                    Text("This does not mean the environment is accessible. Continue reviewing the space directly.")
                         .font(.footnote)
                         .foregroundStyle(.secondary)
                 }
-                .padding(AppSpacing.small)
-                .frame(maxWidth: .infinity, alignment: .leading)
-                .background(.tertiary, in: RoundedRectangle(cornerRadius: AppCornerRadius.card, style: .continuous))
                 .accessibilityElement(children: .combine)
+            } else {
+                ForEach(viewModel.activeFindings) { finding in
+                    findingCard(finding)
+                }
             }
         }
         .padding(AppSpacing.medium)
         .frame(maxWidth: .infinity, alignment: .leading)
         .background(.quaternary, in: RoundedRectangle(cornerRadius: AppCornerRadius.card, style: .continuous))
-        .accessibilityIdentifier("recent-signage-observations")
+        .accessibilityIdentifier("potential-findings")
     }
 
-    private var contrastResults: some View {
+    private func findingCard(_ finding: AccessibilityFinding) -> some View {
         VStack(alignment: .leading, spacing: AppSpacing.small) {
-            Label("Potential low contrast", systemImage: "circle.lefthalf.filled")
+            Label(finding.title, systemImage: "exclamationmark.magnifyingglass")
                 .font(.headline)
-                .accessibilityAddTraits(.isHeader)
-
-            ForEach(viewModel.recentContrastCandidates) { candidate in
-                VStack(alignment: .leading, spacing: AppSpacing.small) {
-                    if let text = candidate.recognizedText {
-                        Text(text)
-                            .font(.body.weight(.semibold))
-                    }
-                    if let ratio = candidate.estimatedContrastRatio {
-                        Text("Estimated text/background contrast: \(ratio.value, format: .number.precision(.fractionLength(1))):1")
-                            .font(.body)
-                    }
-                    Text("This camera-based estimate may be affected by lighting, glare, exposure, and viewing angle. Verify in person; it is not a compliance result.")
-                        .font(.footnote)
-                        .foregroundStyle(.secondary)
-                }
-                .padding(AppSpacing.small)
-                .frame(maxWidth: .infinity, alignment: .leading)
-                .background(.tertiary, in: RoundedRectangle(cornerRadius: AppCornerRadius.card, style: .continuous))
-                .accessibilityElement(children: .combine)
+            if let text = finding.relevantText {
+                Text(text)
+                    .font(.body.weight(.semibold))
             }
+            Text(finding.explanation)
+                .font(.body)
+            Text("Evidence strength: \(finding.evidenceStrength.rawValue.capitalized)")
+                .font(.subheadline)
+            if let ratio = finding.estimatedContrastRatio {
+                Text("Estimated text/background contrast: \(ratio.value, format: .number.precision(.fractionLength(1))):1")
+                    .font(.subheadline)
+            }
+            Text("Estimated from camera observations. Review the environment directly before acting on this result.")
+                .font(.footnote)
+                .foregroundStyle(.secondary)
         }
-        .padding(AppSpacing.medium)
+        .padding(AppSpacing.small)
         .frame(maxWidth: .infinity, alignment: .leading)
-        .background(.quaternary, in: RoundedRectangle(cornerRadius: AppCornerRadius.card, style: .continuous))
-        .accessibilityIdentifier("potential-low-contrast-observations")
+        .background(.tertiary, in: RoundedRectangle(cornerRadius: AppCornerRadius.card, style: .continuous))
+        .accessibilityElement(children: .combine)
+        .accessibilityIdentifier("stable-finding-\(finding.id.uuidString)")
     }
 
     private func statusContainer<Content: View>(

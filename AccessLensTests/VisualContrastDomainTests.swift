@@ -73,19 +73,6 @@ final class VisualContrastDomainTests: XCTestCase {
         XCTAssertEqual(result.evidenceQuality, .usable)
     }
 
-    func testTransientContrastStabilityDeduplicatesAndRequiresTwoMeasurements() {
-        var stabilizer = TransientContrastCandidateStabilizer()
-        let sessionID = AnalysisSessionID()
-        let first = candidate(sessionID: sessionID, frame: 1, timestamp: 1)
-        let second = candidate(sessionID: sessionID, frame: 2, timestamp: 2)
-        let third = candidate(sessionID: sessionID, frame: 3, timestamp: 3)
-
-        XCTAssertTrue(stabilizer.ingest([first], sessionID: sessionID, currentTime: 1).isEmpty)
-        XCTAssertEqual(stabilizer.ingest([second], sessionID: sessionID, currentTime: 2).count, 1)
-        XCTAssertTrue(stabilizer.ingest([third], sessionID: sessionID, currentTime: 3).isEmpty)
-        XCTAssertEqual(stabilizer.candidates.count, 1)
-    }
-
     func testContrastAnalyzerFailureIsIsolatedWhileTextOutputSurvives() async {
         let textAnalyzer = StaticTextAnalyzer()
         let failingAnalyzer = FailingContrastAnalyzer()
@@ -153,22 +140,6 @@ final class VisualContrastDomainTests: XCTestCase {
             evidenceQuality: quality,
             sampleCount: 200,
             luminanceSeparation: lighter - darker
-        )
-    }
-
-    private func candidate(sessionID: AnalysisSessionID, frame: UInt64, timestamp: Double) -> FindingCandidate {
-        FindingCandidate(
-            sessionID: sessionID,
-            sourceObservationIDs: [UUID()],
-            frameSequence: AnalysisFrameSequence(rawValue: frame),
-            region: NormalizedRegion(x: 0.1, y: 0.1, width: 0.2, height: 0.2),
-            evidenceKind: "visual-contrast.potential-low",
-            category: .potentialLowContrastText,
-            recognizedText: "EXIT",
-            presentationTimeSeconds: timestamp,
-            sourceAnalyzerID: AnalyzerIdentifier(rawValue: "test.contrast"),
-            estimatedContrastRatio: ContrastRatio(lighterLuminance: 0.2, darkerLuminance: 0.02),
-            contrastEvidenceQuality: .usable
         )
     }
 

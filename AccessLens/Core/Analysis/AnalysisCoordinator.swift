@@ -1,29 +1,56 @@
 @preconcurrency import AVFoundation
 import CoreVideo
 import Foundation
+import OSLog
 
 /// Connects camera-frame metadata to the bounded scheduler. It owns transient
 /// analysis-session identity, not camera configuration, UI navigation, or
 /// persisted scan data.
 nonisolated final class AnalysisCoordinator: CameraFrameConsumer, @unchecked Sendable {
-    private let lock = NSLock()
     private let scheduler: AnalysisScheduler
     private let performanceMonitor: AnalysisPerformanceMonitor
     private let resultForwarder: AnalysisResultForwarder
-    private var activeSessionID: AnalysisSessionID?
+    private let sessionGate: AnalysisSessionGate
+    private let findingStabilizer: AccessibilityFindingStabilizer
 
     init(
         analyzers: [any AccessibilityAnalyzer] = [],
         performanceStateProvider: any AnalysisPerformanceStateProviding = ProcessInfoAnalysisPerformanceStateProvider(),
-        resultHandler: @escaping @Sendable (AnalysisPassResult) -> Void = { _ in }
+        findingStabilizer: AccessibilityFindingStabilizer = AccessibilityFindingStabilizer(),
+        resultHandler: @escaping @Sendable (StabilizedAnalysisResult) -> Void = { _ in }
     ) {
         let resultForwarder = AnalysisResultForwarder(handler: resultHandler)
+        let sessionGate = AnalysisSessionGate()
         let scheduler = AnalysisScheduler(
             analyzers: analyzers,
-            resultHandler: resultForwarder.publish
+            resultHandler: { result in
+                guard sessionGate.isActive(result.sessionID) else {
+                    AppLog.analysis.debug("Rejected stale finding evidence")
+                    return
+                }
+                let currentTime = result.candidates.compactMap(\.presentationTimeSeconds).max()
+                let stabilized = findingStabilizer.ingest(
+                    result.candidates,
+                    sessionID: result.sessionID,
+                    currentTime: currentTime
+                )
+                guard sessionGate.isActive(result.sessionID) else {
+                    AppLog.analysis.debug("Rejected stale stabilized result")
+                    return
+                }
+                resultForwarder.publish(StabilizedAnalysisResult(
+                    sessionID: result.sessionID,
+                    frameSequence: result.frameSequence,
+                    findings: stabilized.findings,
+                    newlyPromotedFindingIDs: stabilized.newlyPromotedFindingIDs,
+                    failures: result.failures
+                ))
+            }
         )
         self.scheduler = scheduler
         self.resultForwarder = resultForwarder
+        self.sessionGate = sessionGate
+        self.findingStabilizer = findingStabilizer
         performanceMonitor = AnalysisPerformanceMonitor(
             provider: performanceStateProvider,
             update: scheduler.updatePerformanceState
@@ -37,34 +64,30 @@ nonisolated final class AnalysisCoordinator: CameraFrameConsumer, @unchecked Sen
 
     /// Scan presentation owns the result handler. Replacing it does not alter
     /// camera/session ownership and keeps transient output out of app globals.
-    func setResultHandler(_ handler: @escaping @Sendable (AnalysisPassResult) -> Void) {
+    func setResultHandler(_ handler: @escaping @Sendable (StabilizedAnalysisResult) -> Void) {
         resultForwarder.setHandler(handler)
     }
 
     @discardableResult
     func beginSession() -> AnalysisSessionID {
         let sessionID = AnalysisSessionID()
-        lock.lock()
-        let previousSessionID = activeSessionID
-        activeSessionID = sessionID
-        lock.unlock()
+        let previousSessionID = sessionGate.replaceActiveSession(with: sessionID)
 
         if let previousSessionID {
             scheduler.endSession(previousSessionID)
         }
         scheduler.beginSession(sessionID)
+        findingStabilizer.beginSession(sessionID)
         performanceMonitor.refresh()
         return sessionID
     }
 
     func endSession() {
-        lock.lock()
-        let sessionID = activeSessionID
-        activeSessionID = nil
-        lock.unlock()
+        let sessionID = sessionGate.clearActiveSession()
 
         if let sessionID {
             scheduler.endSession(sessionID)
+            findingStabilizer.endSession(sessionID)
         }
     }
 
@@ -74,9 +97,7 @@ nonisolated final class AnalysisCoordinator: CameraFrameConsumer, @unchecked Sen
         videoRotationAngle: Double,
         isMirrored: Bool
     ) {
-        lock.lock()
-        let sessionID = activeSessionID
-        lock.unlock()
+        let sessionID = sessionGate.activeSessionID
         guard let sessionID else { return }
 
         let timestamp = CMSampleBufferGetPresentationTimeStamp(sampleBuffer)
@@ -110,23 +131,57 @@ nonisolated final class AnalysisCoordinator: CameraFrameConsumer, @unchecked Sen
 /// when this bridge is invoked.
 private nonisolated final class AnalysisResultForwarder: @unchecked Sendable {
     private let lock = NSLock()
-    private var handler: @Sendable (AnalysisPassResult) -> Void
+    private var handler: @Sendable (StabilizedAnalysisResult) -> Void
 
-    init(handler: @escaping @Sendable (AnalysisPassResult) -> Void) {
+    init(handler: @escaping @Sendable (StabilizedAnalysisResult) -> Void) {
         self.handler = handler
     }
 
-    func setHandler(_ handler: @escaping @Sendable (AnalysisPassResult) -> Void) {
+    func setHandler(_ handler: @escaping @Sendable (StabilizedAnalysisResult) -> Void) {
         lock.lock()
         self.handler = handler
         lock.unlock()
     }
 
-    func publish(_ result: AnalysisPassResult) {
+    func publish(_ result: StabilizedAnalysisResult) {
         lock.lock()
         let handler = handler
         lock.unlock()
         handler(result)
+    }
+}
+
+/// Synchronously guards the coordinator's current session around result work.
+/// It ensures a completed scheduler pass cannot publish after Scan has ended
+/// or after a newer session replaces it.
+private nonisolated final class AnalysisSessionGate: @unchecked Sendable {
+    private let lock = NSLock()
+    private var storedSessionID: AnalysisSessionID?
+
+    var activeSessionID: AnalysisSessionID? {
+        lock.lock()
+        defer { lock.unlock() }
+        return storedSessionID
+    }
+
+    func replaceActiveSession(with sessionID: AnalysisSessionID) -> AnalysisSessionID? {
+        lock.lock()
+        let previous = storedSessionID
+        storedSessionID = sessionID
+        lock.unlock()
+        return previous
+    }
+
+    func clearActiveSession() -> AnalysisSessionID? {
+        lock.lock()
+        let previous = storedSessionID
+        storedSessionID = nil
+        lock.unlock()
+        return previous
+    }
+
+    func isActive(_ sessionID: AnalysisSessionID) -> Bool {
+        activeSessionID == sessionID
     }
 }
 

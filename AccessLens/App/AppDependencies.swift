@@ -13,6 +13,10 @@ final class AppDependencies {
     let cameraSessionController: CameraSessionController
     let cameraLifecycleCoordinator: CameraLifecycleCoordinator
     let analysisCoordinator: AnalysisCoordinator
+    /// DEBUG launch composition may provide a deterministic presentation value
+    /// for UI tests. Production composition always leaves this empty.
+    let scanFindingOverride: [AccessibilityFinding]
+    let scanAnalysisPresentationOverride: Bool
 
     init(
         navigator: AppNavigator? = nil,
@@ -20,7 +24,9 @@ final class AppDependencies {
         onboardingState: OnboardingState? = nil,
         cameraAuthorizationService: (any CameraAuthorizationProviding)? = nil,
         cameraSessionController: CameraSessionController? = nil,
-        analysisCoordinator: AnalysisCoordinator? = nil
+        analysisCoordinator: AnalysisCoordinator? = nil,
+        scanFindingOverride: [AccessibilityFinding] = [],
+        scanAnalysisPresentationOverride: Bool = false
     ) {
         self.navigator = navigator ?? AppNavigator()
         self.lifecycleCoordinator = lifecycleCoordinator ?? AppLifecycleCoordinator()
@@ -35,6 +41,8 @@ final class AppDependencies {
             analyzers: [VisionTextAnalyzer(), VisualContrastAnalyzer()]
         )
         self.analysisCoordinator = coordinator
+        self.scanFindingOverride = scanFindingOverride
+        self.scanAnalysisPresentationOverride = scanAnalysisPresentationOverride
         sessionController.frameSource.consumer = coordinator
     }
 
@@ -51,17 +59,25 @@ final class AppDependencies {
             onboardingState = nil
         }
 
+        let scanFindingOverride = AppLaunchConfiguration.scanFindingOverride(arguments: arguments)
+        let scanAnalysisPresentationOverride = AppLaunchConfiguration.scanAnalysisPresentationOverride(arguments: arguments)
         if let authorization = AppLaunchConfiguration.cameraAuthorizationOverride(arguments: arguments) {
             return AppDependencies(
                 onboardingState: onboardingState,
                 cameraAuthorizationService: InMemoryCameraAuthorizationService(
                     authorization: authorization
-                )
+                ),
+                scanFindingOverride: scanFindingOverride,
+                scanAnalysisPresentationOverride: scanAnalysisPresentationOverride
             )
         }
 
         if let onboardingState {
-            return AppDependencies(onboardingState: onboardingState)
+            return AppDependencies(
+                onboardingState: onboardingState,
+                scanFindingOverride: scanFindingOverride,
+                scanAnalysisPresentationOverride: scanAnalysisPresentationOverride
+            )
         }
         #endif
 
@@ -72,6 +88,7 @@ final class AppDependencies {
 private enum AppLaunchConfiguration {
     private static let onboardingStateArgument = "-accesslens-onboarding-state"
     private static let cameraAuthorizationArgument = "-accesslens-camera-authorization"
+    private static let scanFindingsArgument = "-accesslens-scan-findings"
 
     static func onboardingCompletionOverride(arguments: [String]) -> Bool? {
         guard let argumentIndex = arguments.firstIndex(of: onboardingStateArgument) else {
@@ -111,5 +128,53 @@ private enum AppLaunchConfiguration {
         default:
             return nil
         }
+    }
+
+    static func scanFindingOverride(arguments: [String]) -> [AccessibilityFinding] {
+        guard let argumentIndex = arguments.firstIndex(of: scanFindingsArgument) else {
+            return []
+        }
+        let valueIndex = arguments.index(after: argumentIndex)
+        guard valueIndex < arguments.endIndex, arguments[valueIndex] == "stable-low-contrast" else {
+            return []
+        }
+
+        guard let sessionUUID = UUID(uuidString: "11111111-1111-1111-1111-111111111111"),
+              let findingID = UUID(uuidString: "22222222-2222-2222-2222-222222222222") else {
+            return []
+        }
+        let sessionID = AnalysisSessionID(rawValue: sessionUUID)
+        return [AccessibilityFinding(
+            id: findingID,
+            category: .potentialLowContrastText,
+            title: "Potential low contrast",
+            explanation: "Text in this area may be difficult to distinguish from its background.",
+            evidenceSummary: "Deterministic UI-test finding.",
+            evidenceStrength: .moderate,
+            region: NormalizedRegion(x: 0.2, y: 0.2, width: 0.3, height: 0.1),
+            firstObservedTime: 1,
+            lastObservedTime: 3,
+            supportingFrameRange: FindingFrameRange(
+                first: AnalysisFrameSequence(rawValue: 1),
+                last: AnalysisFrameSequence(rawValue: 3)
+            ),
+            supportingObservationCount: 3,
+            sessionID: sessionID,
+            sourceAnalyzerIDs: [
+                AnalyzerIdentifier(rawValue: "vision.text.v1"),
+                AnalyzerIdentifier(rawValue: "vision.visual-contrast.v1")
+            ],
+            relevantText: "EXIT",
+            estimatedContrastRatio: ContrastRatio(lighterLuminance: 0.2, darkerLuminance: 0.02)
+        )]
+    }
+
+    static func scanAnalysisPresentationOverride(arguments: [String]) -> Bool {
+        guard let argumentIndex = arguments.firstIndex(of: scanFindingsArgument) else {
+            return false
+        }
+        let valueIndex = arguments.index(after: argumentIndex)
+        guard valueIndex < arguments.endIndex else { return false }
+        return ["stable-low-contrast", "analyzing-empty"].contains(arguments[valueIndex])
     }
 }

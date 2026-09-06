@@ -59,20 +59,6 @@ final class VisionTextAnalysisTests: XCTestCase {
         XCTAssertNil(classifier.classify(makeTextObservation(text: "")))
     }
 
-    func testTransientDeduplicationKeepsOneRepeatedSignageCandidate() {
-        var deduplicator = TransientSignageDeduplicator(maximumCandidates: 4, retentionInterval: 8)
-        let sessionID = AnalysisSessionID()
-        let first = makeCandidate(text: "EXIT", sessionID: sessionID, frame: 1, timestamp: 1)
-        let second = makeCandidate(text: "exit", sessionID: sessionID, frame: 2, timestamp: 2)
-        let third = makeCandidate(text: "EXIT", sessionID: sessionID, frame: 3, timestamp: 3)
-
-        XCTAssertEqual(deduplicator.ingest([first], sessionID: sessionID, currentTime: 1).count, 1)
-        XCTAssertTrue(deduplicator.ingest([second], sessionID: sessionID, currentTime: 2).isEmpty)
-        XCTAssertTrue(deduplicator.ingest([third], sessionID: sessionID, currentTime: 3).isEmpty)
-        XCTAssertEqual(deduplicator.candidates.count, 1)
-        XCTAssertEqual(deduplicator.candidates.first?.frameSequence.rawValue, 3)
-    }
-
     func testLateTextResultFromPreviousSessionIsDiscarded() async {
         let analyzer = LateTextAnalyzer()
         let recorder = TextResultRecorder()
@@ -156,26 +142,6 @@ final class VisionTextAnalysisTests: XCTestCase {
             text: text,
             rawFrameworkConfidence: 0.9,
             region: NormalizedRegion(x: 0, y: 0, width: 1, height: 1)
-        )
-    }
-
-    private func makeCandidate(
-        text: String,
-        sessionID: AnalysisSessionID,
-        frame: UInt64,
-        timestamp: Double
-    ) -> FindingCandidate {
-        FindingCandidate(
-            sessionID: sessionID,
-            sourceObservationIDs: [UUID()],
-            frameSequence: AnalysisFrameSequence(rawValue: frame),
-            region: NormalizedRegion(x: 0.1, y: 0.1, width: 0.2, height: 0.2),
-            evidenceKind: "signage.exit",
-            category: .environmentalSignage,
-            recognizedText: text,
-            rawFrameworkConfidence: 0.9,
-            presentationTimeSeconds: timestamp,
-            sourceAnalyzerID: AnalyzerIdentifier(rawValue: "test.vision")
         )
     }
 

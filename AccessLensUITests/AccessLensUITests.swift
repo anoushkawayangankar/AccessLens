@@ -51,14 +51,50 @@ final class AccessLensUITests: XCTestCase {
     }
 
     @MainActor
+    func testAnalyzingScanWithNoStableFindingsDoesNotClaimAccessibility() throws {
+        let app = launchApp(
+            onboardingState: "complete",
+            cameraAuthorization: "authorized",
+            scanFindings: "analyzing-empty"
+        )
+
+        app.buttons["Start Scan"].tap()
+        XCTAssertTrue(app.staticTexts["scan-heading"].waitForExistence(timeout: 5))
+        let emptyState = app.staticTexts["no-potential-findings"]
+        XCTAssertTrue(emptyState.waitForExistence(timeout: 5), emptyState.debugDescription)
+        XCTAssertTrue(emptyState.label.contains("No potential issues identified yet."))
+        XCTAssertFalse(app.staticTexts["Environment is accessible"].exists)
+    }
+
+    @MainActor
+    func testDeterministicStableFindingIsPresentedWithUncertainty() throws {
+        let app = launchApp(
+            onboardingState: "complete",
+            cameraAuthorization: "authorized",
+            scanFindings: "stable-low-contrast"
+        )
+
+        app.buttons["Start Scan"].tap()
+
+        XCTAssertTrue(app.staticTexts["Potential low contrast"].waitForExistence(timeout: 5))
+        XCTAssertTrue(app.staticTexts["Text in this area may be difficult to distinguish from its background."].exists)
+        XCTAssertTrue(app.staticTexts["EXIT"].exists)
+        XCTAssertFalse(app.staticTexts["WCAG FAIL"].exists)
+    }
+
+    @MainActor
     private func launchApp(
         onboardingState: String,
-        cameraAuthorization: String? = nil
+        cameraAuthorization: String? = nil,
+        scanFindings: String? = nil
     ) -> XCUIApplication {
         let app = XCUIApplication()
         app.launchArguments += ["-accesslens-onboarding-state", onboardingState]
         if let cameraAuthorization {
             app.launchArguments += ["-accesslens-camera-authorization", cameraAuthorization]
+        }
+        if let scanFindings {
+            app.launchArguments += ["-accesslens-scan-findings", scanFindings]
         }
         app.launch()
         return app

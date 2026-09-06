@@ -29,7 +29,8 @@ nonisolated struct SignageCandidateClassifier: Sendable {
             recognizedText: observation.text,
             rawFrameworkConfidence: observation.rawFrameworkConfidence,
             presentationTimeSeconds: observation.presentationTimeSeconds,
-            sourceAnalyzerID: observation.analyzerID
+            sourceAnalyzerID: observation.analyzerID,
+            sourceAnalyzerIDs: [observation.analyzerID]
         )
     }
 

@@ -25,27 +25,31 @@ final class ScanViewModel: ObservableObject {
     @Published private(set) var isRequestingPermission = false
     @Published private(set) var settingsCouldNotOpen = false
     @Published private(set) var isAnalyzingEnvironment = false
-    @Published private(set) var recentSignageCandidates: [FindingCandidate] = []
-    @Published private(set) var recentContrastCandidates: [FindingCandidate] = []
+    @Published private(set) var activeFindings: [AccessibilityFinding] = []
 
     private let authorizationService: any CameraAuthorizationProviding
     private let sessionController: CameraSessionController
     private let analysisCoordinator: AnalysisCoordinator
+    private let initialFindings: [AccessibilityFinding]
+    private let forceAnalysisPresentation: Bool
     private var isVisible = false
     private var isApplicationActive = true
     private var hasActiveAnalysisSession = false
     private var activeAnalysisSessionID: AnalysisSessionID?
-    private var signageDeduplicator = TransientSignageDeduplicator()
-    private var contrastStabilizer = TransientContrastCandidateStabilizer()
+    private var announcedFindingIDs: Set<UUID> = []
 
     init(
         authorizationService: any CameraAuthorizationProviding,
         sessionController: CameraSessionController,
-        analysisCoordinator: AnalysisCoordinator
+        analysisCoordinator: AnalysisCoordinator,
+        initialFindings: [AccessibilityFinding] = [],
+        forceAnalysisPresentation: Bool = false
     ) {
         self.authorizationService = authorizationService
         self.sessionController = sessionController
         self.analysisCoordinator = analysisCoordinator
+        self.initialFindings = initialFindings
+        self.forceAnalysisPresentation = forceAnalysisPresentation
         authorization = authorizationService.currentAuthorization()
         sessionController.setAuthorization(authorization)
         analysisCoordinator.setResultHandler { [weak self] result in
@@ -57,6 +61,12 @@ final class ScanViewModel: ObservableObject {
 
     var permissionPresentation: CameraPermissionPresentation {
         CameraPermissionPresentation(authorization: authorization)
+    }
+
+    /// Exists only for deterministic DEBUG launch composition. It never turns
+    /// on analysis or supplies fake evidence in normal application behavior.
+    var shouldPresentAnalysisFoundation: Bool {
+        isAnalyzingEnvironment || forceAnalysisPresentation
     }
 
     func appear() {
@@ -101,45 +111,30 @@ final class ScanViewModel: ObservableObject {
         if shouldAnalyze {
             let sessionID = analysisCoordinator.beginSession()
             activeAnalysisSessionID = sessionID
-            signageDeduplicator.reset()
-            contrastStabilizer.reset()
-            recentSignageCandidates = []
-            recentContrastCandidates = []
+            activeFindings = initialFindings
+            announcedFindingIDs = []
             isAnalyzingEnvironment = true
         } else {
             activeAnalysisSessionID = nil
-            signageDeduplicator.reset()
-            contrastStabilizer.reset()
-            recentSignageCandidates = []
-            recentContrastCandidates = []
+            activeFindings = []
+            announcedFindingIDs = []
             isAnalyzingEnvironment = false
             analysisCoordinator.endSession()
         }
     }
 
-    private func receive(_ result: AnalysisPassResult) {
+    private func receive(_ result: StabilizedAnalysisResult) {
         guard activeAnalysisSessionID == result.sessionID else { return }
-        let currentTime = result.candidates.compactMap(\.presentationTimeSeconds).max()
-        let signageAdditions = signageDeduplicator.ingest(
-            result.candidates,
-            sessionID: result.sessionID,
-            currentTime: currentTime
-        )
-        let contrastAdditions = contrastStabilizer.ingest(
-            result.candidates,
-            sessionID: result.sessionID,
-            currentTime: currentTime
-        )
-        recentSignageCandidates = signageDeduplicator.candidates
-        recentContrastCandidates = contrastStabilizer.candidates
+        activeFindings = result.findings
 
-        if let announcement = contrastAdditions.first?.recognizedText {
+        let newIDs = result.newlyPromotedFindingIDs.subtracting(announcedFindingIDs)
+        if let finding = activeFindings.first(where: { newIDs.contains($0.id) }) {
+            announcedFindingIDs.insert(finding.id)
+            let text = finding.relevantText.map { ": \($0)" } ?? ""
             UIAccessibility.post(
                 notification: .announcement,
-                argument: "Potential low estimated contrast: \(announcement)"
+                argument: "New potential finding\(text)"
             )
-        } else if let announcement = signageAdditions.first?.recognizedText {
-            UIAccessibility.post(notification: .announcement, argument: "Signage detected: \(announcement)")
         }
     }
 }
