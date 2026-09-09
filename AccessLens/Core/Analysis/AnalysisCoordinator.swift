@@ -83,12 +83,29 @@ nonisolated final class AnalysisCoordinator: CameraFrameConsumer, @unchecked Sen
     }
 
     func endSession() {
+        _ = endActiveSession(logCompletion: false)
+    }
+
+    /// Stops admitting work before ending the scheduler and returns the last
+    /// compact, stable evidence snapshot. Once this begins, no late analyzer
+    /// output can reach a completed Scan review.
+    func completeSession() -> [AccessibilityFinding] {
+        endActiveSession(logCompletion: true)
+    }
+
+    private func endActiveSession(logCompletion: Bool) -> [AccessibilityFinding] {
         let sessionID = sessionGate.clearActiveSession()
 
         if let sessionID {
             scheduler.endSession(sessionID)
+            let findings = findingStabilizer.findings(for: sessionID)
             findingStabilizer.endSession(sessionID)
+            if logCompletion {
+                AppLog.analysis.info("Analysis session completed")
+            }
+            return findings
         }
+        return []
     }
 
     func cameraFrameSource(

@@ -83,6 +83,88 @@ final class AccessLensUITests: XCTestCase {
     }
 
     @MainActor
+    func testCompletingScanPresentsReviewWithStableFinding() throws {
+        let app = launchApp(
+            onboardingState: "complete",
+            cameraAuthorization: "authorized",
+            scanFindings: "stable-low-contrast"
+        )
+
+        app.buttons["Start Scan"].tap()
+        XCTAssertTrue(app.buttons["finish-scan"].waitForExistence(timeout: 5))
+        app.buttons["finish-scan"].tap()
+
+        XCTAssertTrue(app.staticTexts["scan-review-heading"].waitForExistence(timeout: 5))
+        XCTAssertTrue(app.staticTexts["Potential low contrast"].exists)
+        XCTAssertTrue(app.staticTexts["EXIT"].exists)
+        XCTAssertTrue(
+            app.staticTexts.matching(identifier: "scan-review-summary").allElementsBoundByIndex
+                .contains { $0.label.contains("1 potential issue") }
+        )
+    }
+
+    @MainActor
+    func testCompletingZeroFindingScanUsesTruthfulReviewLanguage() throws {
+        let app = launchApp(
+            onboardingState: "complete",
+            cameraAuthorization: "authorized",
+            scanFindings: "analyzing-empty"
+        )
+
+        app.buttons["Start Scan"].tap()
+        XCTAssertTrue(app.buttons["finish-scan"].waitForExistence(timeout: 5))
+        app.buttons["finish-scan"].tap()
+
+        let zeroFindingLabels = app.staticTexts.matching(identifier: "scan-review-zero-findings")
+        XCTAssertTrue(zeroFindingLabels.firstMatch.waitForExistence(timeout: 5))
+        XCTAssertTrue(
+            zeroFindingLabels.allElementsBoundByIndex.contains { element in
+                element.label.contains("No potential issues")
+            }
+        )
+        XCTAssertFalse(app.staticTexts["Environment is accessible"].exists)
+    }
+
+    @MainActor
+    func testDoneReturnsToHomeAfterReview() throws {
+        let app = launchApp(
+            onboardingState: "complete",
+            cameraAuthorization: "authorized",
+            scanFindings: "analyzing-empty"
+        )
+
+        app.buttons["Start Scan"].tap()
+        XCTAssertTrue(app.buttons["finish-scan"].waitForExistence(timeout: 5))
+        app.buttons["finish-scan"].tap()
+        XCTAssertTrue(app.buttons["scan-review-done"].waitForExistence(timeout: 5))
+        app.buttons["scan-review-done"].tap()
+
+        XCTAssertTrue(app.staticTexts["accesslens-root-title"].waitForExistence(timeout: 5))
+        XCTAssertFalse(app.staticTexts["scan-review-heading"].exists)
+    }
+
+    @MainActor
+    func testNewScanDoesNotInheritCompletedScanFindings() throws {
+        let app = launchApp(
+            onboardingState: "complete",
+            cameraAuthorization: "authorized",
+            scanFindings: "stable-low-contrast"
+        )
+
+        app.buttons["Start Scan"].tap()
+        XCTAssertTrue(app.buttons["finish-scan"].waitForExistence(timeout: 5))
+        app.buttons["finish-scan"].tap()
+        XCTAssertTrue(app.buttons["scan-review-done"].waitForExistence(timeout: 5))
+        app.buttons["scan-review-done"].tap()
+        XCTAssertTrue(app.staticTexts["accesslens-root-title"].waitForExistence(timeout: 5))
+
+        app.buttons["Start Scan"].tap()
+        XCTAssertTrue(app.staticTexts["scan-heading"].waitForExistence(timeout: 5))
+        XCTAssertTrue(app.staticTexts["no-potential-findings"].waitForExistence(timeout: 5))
+        XCTAssertFalse(app.staticTexts["EXIT"].exists)
+    }
+
+    @MainActor
     private func launchApp(
         onboardingState: String,
         cameraAuthorization: String? = nil,

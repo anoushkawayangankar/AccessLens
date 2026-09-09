@@ -12,6 +12,7 @@
 | 5 — Production on-device text + signage analyzer | **COMPLETE** | Real local `VNRecognizeTextRequest` integration, normalized text observations, conservative signage candidates, transient Scan presentation/deduplication, and deterministic OCR-boundary tests added. No contrast analysis, persistence, upload, networking, analytics, score, or compliance claim introduced. |
 | 6 — On-device visual contrast analysis | **COMPLETE** | OCR-region-only BGRA contrast sampling, testable luminance/ratio/evidence policies, conservative transient low-contrast candidates, Scan presentation, bounded confirmation, and deterministic tests added. No compliance claim, persistence, upload, networking, analytics, or score introduced. |
 | 7 — Accessibility finding stabilization + evidence fusion | **COMPLETE** | Framework-independent, session-scoped findings now require repeated text-and-region-consistent usable contrast evidence. Bounded evidence fusion provides stable identity, provenance, expiry, controlled VoiceOver, and honest Scan presentation; findings remain transient and local. |
+| 8 — Scan session completion + accessible review | **COMPLETE** | Explicit scan-session lifecycle, idempotent Finish/Discard, late-result rejection, immutable in-memory completed snapshot, accessible Scan Review/Done flow, and deterministic completion/review tests added. No persistence, history, export, new analyzer, networking, analytics, score, or compliance claim introduced. |
 
 ## Planned staged workflow
 
@@ -24,9 +25,10 @@
 | 5 — On-device text analysis | Vision text normalization, `TextAnalyzer`, and honest text observations | M4 | Analyzer/scheduling/stale-result tests; physical OCR quality validation. |
 | 6 — On-device visual contrast analysis | Bounded OCR-region contrast estimation, evidence quality, conservative transient presentation | M5 | Deterministic contrast/policy/stability tests and physical-device visual validation. |
 | 7 — Accessibility finding stabilization + evidence fusion | Bounded, explainable observation → candidate → finding promotion and expiry; no persistence | M6 | Domain geometry/association/promotion/expiry/memory tests; UI regression and build. |
-| 8 — Local saved scans | SwiftData repository, migration/recovery, saved scan review | M7 | Persistence/corruption/migration tests; device storage validation. |
-| 9 — Reports/export | Versioned report composition, user-controlled sharing, export privacy UX | M8 | Export tests and physical share-sheet/document validation. |
-| 10 — Hardening and release readiness | Accessibility audit, privacy audit, performance/lifecycle hardening, full regression and release build | M1–M9 | All release gates pass, including physical-device QA. |
+| 8 — Scan session completion + accessible review | Finish/discard lifecycle, immutable in-memory review snapshot, accessible review and Done flow; no persistence | M7 | Completion/session-isolation/resource-cleanup tests; UI review regressions and build. |
+| 9 — Local saved scans | SwiftData repository, migration/recovery, saved-scan history/review | M8 | Persistence/corruption/migration tests; device storage validation. |
+| 10 — Reports/export | Versioned report composition, user-controlled sharing, export privacy UX | M9 | Export tests and physical share-sheet/document validation. |
+| 11 — Hardening and release readiness | Accessibility audit, privacy audit, performance/lifecycle hardening, full regression and release build | M1–M10 | All release gates pass, including physical-device QA. |
 
 Future capability expansion (for example, constrained contrast indicators or custom ML) is not implied by this roadmap. It requires a separately approved specification, defensibility review, tests, and validation.
 
@@ -43,6 +45,7 @@ At the end of every milestone: complete its scoped implementation; run focused t
 - Vision/OCR implementation: `VisionTextAnalyzer` performs real on-device `VNRecognizeTextRequest` work behind that scheduler. Results are normalized into text observations and conservatively classified as contextual signage candidates; a sign word alone is never a negative finding.
 - Visual contrast implementation: `VisualContrastAnalyzer` consumes only same-frame OCR regions tied to signage candidates, directly samples bounded in-memory BGRA crops, calculates estimated luminance/contrast evidence, and emits a transient potential-low-contrast candidate only after usable evidence. Contrast estimates are not compliance measurements.
 - Finding stabilization implementation: `AccessibilityFindingStabilizer` consumes only compact candidates and fuses category, conservative normalized text identity, normalized-region IoU, temporal proximity, usable evidence, and analyzer provenance. Its policy caps tracks at 12, entries at 6 per track, findings at 6, requires 3 consistent observations within 5 seconds, and expires unsupported tracks/findings after 6 seconds. The active Scan list contains only its session-scoped stable findings; it retains no frame, crop, raw Vision object, or persisted data.
+- Scan completion/review implementation: `ScanSession` owns a deterministic per-scan lifecycle separate from the analysis generation. Finish atomically invalidates analysis/camera work before taking an immutable, in-memory-only `CompletedScan` of already-stabilized findings; Scan Review presents that snapshot with evidence strength, uncertainty, a truthful zero-finding state, limitations, and Done-to-Home. Leave Scan confirms discard instead of silently abandoning live work. No scan, finding, text, image, or frame is persisted.
 - Third-party dependencies introduced: **none**.
 - Deployment target: **iOS 17.0**.
 - Supported device family: **iPhone**. Supported orientations are portrait, landscape left, and landscape right to support future camera scanning without forcing a single orientation.
@@ -110,3 +113,12 @@ At the end of every milestone: complete its scoped implementation; run focused t
 - UI tests: **PASSED**, 6 passed / 0 failed / 0 skipped (`AccessLensUITests`). Deterministic Scan states verify a truthful zero-finding state and a stabilized potential-low-contrast presentation without a certification claim; they do not validate live camera evidence.
 - Finding policy: only `.potentialLowContrastText` candidates with usable contrast evidence, valid region, and recognized contextual sign text are eligible. Three text-and-region-consistent observations within five seconds promote a finding; five retained observations raise evidence strength from moderate to strong. A finding expires after six seconds without supporting evidence. These are product evidence rules, not a legal or accessibility-certification threshold.
 - Privacy/lifetime: findings, evidence summaries, text, ratios, and analyzer provenance remain on-device transient state and are cleared on Scan end/session replacement. They are not saved to UserDefaults, SwiftData, Core Data, files, reports, logs as content, or any network service.
+
+## Milestone 8 verification record
+
+- Simulator: **iPhone 17 Pro**, iOS Simulator 26.5, device ID `488A5CFD-DCA8-42B5-8AE9-346DBFBDEE14`.
+- Debug build: **PASSED** on 2026-09-09 against the concrete simulator.
+- Unit tests: **PASSED**, 73 passed / 0 failed / 0 skipped (`AccessLensTests`). Coverage includes completion snapshots, zero findings, idempotency, late-result rejection, session reset, discard, resource shutdown, snapshot immutability, review presentation, and all prior regressions.
+- UI tests: **PASSED**, 10 passed / 0 failed / 0 skipped (`AccessLensUITests`). Deterministic flows cover stable-finding and zero-finding review, Done-to-Home, and a fresh scan without inherited previous findings; they do not validate live camera evidence.
+- Privacy/lifetime: a completed scan is an in-memory domain snapshot only. It contains no frame/image/Vision object and is discarded on Done, discard, or app termination. No scan history, finding/text/image persistence, export, network service, analytics, or new analyzer was introduced.
+- Physical completion/review validation: **USER VALIDATION REQUIRED** for Finish/Leave behavior, camera/analysis release, background recovery without accidental completion, review accessibility at supported device sizes/orientations, and live evidence behavior on an authorized iPhone.

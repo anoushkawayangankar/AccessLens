@@ -13,9 +13,9 @@ final class AppDependencies {
     let cameraSessionController: CameraSessionController
     let cameraLifecycleCoordinator: CameraLifecycleCoordinator
     let analysisCoordinator: AnalysisCoordinator
-    /// DEBUG launch composition may provide a deterministic presentation value
-    /// for UI tests. Production composition always leaves this empty.
-    let scanFindingOverride: [AccessibilityFinding]
+    /// DEBUG launch composition may provide deterministic evidence for one
+    /// test scan. Production composition always returns an empty array.
+    private let scanFindingOverrideProvider: ScanFindingOverrideProvider
     let scanAnalysisPresentationOverride: Bool
 
     init(
@@ -25,7 +25,7 @@ final class AppDependencies {
         cameraAuthorizationService: (any CameraAuthorizationProviding)? = nil,
         cameraSessionController: CameraSessionController? = nil,
         analysisCoordinator: AnalysisCoordinator? = nil,
-        scanFindingOverride: [AccessibilityFinding] = [],
+        scanFindingOverrides: [[AccessibilityFinding]] = [],
         scanAnalysisPresentationOverride: Bool = false
     ) {
         self.navigator = navigator ?? AppNavigator()
@@ -41,9 +41,13 @@ final class AppDependencies {
             analyzers: [VisionTextAnalyzer(), VisualContrastAnalyzer()]
         )
         self.analysisCoordinator = coordinator
-        self.scanFindingOverride = scanFindingOverride
+        scanFindingOverrideProvider = ScanFindingOverrideProvider(overrides: scanFindingOverrides)
         self.scanAnalysisPresentationOverride = scanAnalysisPresentationOverride
         sessionController.frameSource.consumer = coordinator
+    }
+
+    func nextScanFindingOverride() -> [AccessibilityFinding] {
+        scanFindingOverrideProvider.next()
     }
 
     /// Creates process-specific dependencies without exposing test controls in
@@ -67,7 +71,7 @@ final class AppDependencies {
                 cameraAuthorizationService: InMemoryCameraAuthorizationService(
                     authorization: authorization
                 ),
-                scanFindingOverride: scanFindingOverride,
+                scanFindingOverrides: scanFindingOverride.isEmpty ? [] : [scanFindingOverride],
                 scanAnalysisPresentationOverride: scanAnalysisPresentationOverride
             )
         }
@@ -75,13 +79,28 @@ final class AppDependencies {
         if let onboardingState {
             return AppDependencies(
                 onboardingState: onboardingState,
-                scanFindingOverride: scanFindingOverride,
+                scanFindingOverrides: scanFindingOverride.isEmpty ? [] : [scanFindingOverride],
                 scanAnalysisPresentationOverride: scanAnalysisPresentationOverride
             )
         }
         #endif
 
         return AppDependencies()
+    }
+}
+
+/// A test-composition helper only. It has no production UI control and keeps
+/// deterministic evidence scoped to a single test-created scan session.
+private final class ScanFindingOverrideProvider {
+    private var overrides: [[AccessibilityFinding]]
+
+    init(overrides: [[AccessibilityFinding]]) {
+        self.overrides = overrides
+    }
+
+    func next() -> [AccessibilityFinding] {
+        guard !overrides.isEmpty else { return [] }
+        return overrides.removeFirst()
     }
 }
 

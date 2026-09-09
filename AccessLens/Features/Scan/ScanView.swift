@@ -5,13 +5,20 @@ struct ScanView: View {
     @StateObject private var viewModel: ScanViewModel
     @ObservedObject private var sessionController: CameraSessionController
     @Environment(\.scenePhase) private var scenePhase
+    @State private var isShowingDiscardConfirmation = false
+
+    private let onCompleted: (CompletedScan) -> Void
+    private let onDiscard: () -> Void
 
     init(
         authorizationService: any CameraAuthorizationProviding,
         sessionController: CameraSessionController,
         analysisCoordinator: AnalysisCoordinator,
         initialFindings: [AccessibilityFinding] = [],
-        forceAnalysisPresentation: Bool = false
+        initialFindingsProvider: (() -> [AccessibilityFinding])? = nil,
+        forceAnalysisPresentation: Bool = false,
+        onCompleted: @escaping (CompletedScan) -> Void = { _ in },
+        onDiscard: @escaping () -> Void = {}
     ) {
         _viewModel = StateObject(
             wrappedValue: ScanViewModel(
@@ -19,10 +26,13 @@ struct ScanView: View {
                 sessionController: sessionController,
                 analysisCoordinator: analysisCoordinator,
                 initialFindings: initialFindings,
+                initialFindingsProvider: initialFindingsProvider,
                 forceAnalysisPresentation: forceAnalysisPresentation
             )
         )
         _sessionController = ObservedObject(wrappedValue: sessionController)
+        self.onCompleted = onCompleted
+        self.onDiscard = onDiscard
     }
 
     var body: some View {
@@ -50,6 +60,37 @@ struct ScanView: View {
         }
         .navigationTitle("Scan")
         .navigationBarTitleDisplayMode(.inline)
+        .navigationBarBackButtonHidden(viewModel.hasActiveLiveScan)
+        .toolbar {
+            if viewModel.hasActiveLiveScan {
+                ToolbarItem(placement: .topBarLeading) {
+                    Button("Leave Scan") {
+                        isShowingDiscardConfirmation = true
+                    }
+                    .accessibilityHint("Prompts to discard this active scan.")
+                    .accessibilityIdentifier("leave-scan")
+                }
+            }
+            if viewModel.canFinishScan {
+                ToolbarItem(placement: .topBarTrailing) {
+                    Button("Finish Scan") {
+                        guard let completedScan = viewModel.finishScan() else { return }
+                        onCompleted(completedScan)
+                    }
+                    .accessibilityHint("Stops analysis and opens the scan review.")
+                    .accessibilityIdentifier("finish-scan")
+                }
+            }
+        }
+        .alert("End this scan?", isPresented: $isShowingDiscardConfirmation) {
+            Button("Continue Scanning", role: .cancel) {}
+            Button("End Scan", role: .destructive) {
+                viewModel.discardScan()
+                onDiscard()
+            }
+        } message: {
+            Text("Ending this scan discards its current findings and does not create a review.")
+        }
         .onAppear { viewModel.appear() }
         .onDisappear { viewModel.disappear() }
         .onChange(of: scenePhase, initial: true) { _, newPhase in

@@ -9,7 +9,7 @@ Use a straightforward SwiftUI feature structure with focused Apple-native servic
 ```text
 Camera frame → bounded scheduler → Vision requests → normalized observations
 → independent analyzers → finding candidates → confidence/evidence policy
-→ stabilizer → live stable findings → SwiftUI presentation / save snapshot
+→ stabilizer → live stable findings → Finish Scan → immutable in-memory review snapshot
 ```
 
 ## Domain model contract
@@ -124,9 +124,21 @@ Raw observation IDs exist only within a live analysis generation. An **observati
 
 Each finding retains a compact evidence summary, contextual recognized text, latest estimated ratio, time/frame range, support count, evidence strength (`moderate` at promotion and `strong` at five retained observations), normalized region, and unique analyzer IDs. It retains no image, crop, buffer, or Vision/AVFoundation type. The deterministic explanation is cautious: text *may* be difficult to distinguish from its background and should be reviewed directly. No remediation, severity, legal/compliance decision, score, or persistence is introduced in Milestone 7. The Scan UI shows only active stable findings, or “No potential issues identified yet. This does not mean the environment is accessible,” and announces a newly promoted finding once rather than observations or updates.
 
+## Scan completion and review (Milestone 8)
+
+`ScanSession` is a framework-independent, value-oriented domain lifecycle for one user scan: `idle → preparing → scanning → completing → completed` (or `discarded`). It has its own UUID and start/completion timestamps; it contains no camera, frame, Vision, Core Image, or SwiftUI state. It complements rather than replaces the short-lived `AnalysisSessionID`: background/inactive lifecycle handling can stop analysis and later establish a fresh analysis generation while the user’s `ScanSession` remains active. Backgrounding never silently completes a scan.
+
+Live scan state is mutable and session-scoped: camera resources, bounded scheduler work, frame payloads, candidate tracks, stabilizer evidence, and the latest accepted findings. `CompletedScan` is a separate immutable value snapshot containing only the scan identity/timestamps, stabilized `AccessibilityFinding` values, count, and review limitation text. It has no sample buffer, image, crop, Vision object, or mutable analyzer state. It is deliberately in-memory only for this milestone: app termination loses it, and it is not written to UserDefaults, SwiftData, Core Data, files, reports, or exports.
+
+`ScanViewModel` coordinates the explicit Finish Scan intent but delegates analysis shutdown to `AnalysisCoordinator`. Finish is idempotent: it first enters `completing`, makes the camera invisible to the runtime policy, then clears the coordinator’s session gate, cancels bounded scheduler work, obtains the final already-stabilized finding snapshot, and clears the stabilizer. Only then does it create `CompletedScan` and request typed navigation to `AppRoute.scanReview`. Clearing the gate before cancellation rejects late OCR, contrast, and candidate output; the review value cannot change after creation. Completion is a bounded domain snapshot operation and never waits for fresh image/Vision work on the main actor.
+
+While an active scan is visible, the normal back affordance is replaced with an accessible **Leave Scan** action and confirmation. **End Scan** discards the live session without a snapshot; **Finish Scan** creates the review snapshot. Both stop camera and analysis work, release transient frame/evidence state, and prevent stale publication. The Review feature is presentation-only: `ScanReviewViewModel` transforms immutable `CompletedScan` data and has no service dependencies. **Done** returns the app navigator to Home rather than resuming the old camera session. A new scan always creates a new `ScanSession` and begins with empty transient evidence.
+
+Review uses text-first cards for potential findings, explainable evidence strength, contextual signage, an estimated-evidence uncertainty statement, and one concise scan-level limitation. A zero-finding review says that no potential issues were identified during this scan and explicitly says this does not guarantee full accessibility. It never says a scene is accessible, compliant, passed, or free of barriers. The Review title, summary, cards, limitations, and Done action are in logical VoiceOver order; controls have stable Voice Control names; semantic text/symbols—not color alone—communicate state; and scroll-based layouts support Dynamic Type and small/landscape screens. No new animation is required, so Reduce Motion has no essential motion to suppress.
+
 ## Presentation and navigation
 
-Major surfaces: Onboarding, Camera Education/Permission, Scan, Finding Detail, Saved Scans, Saved Scan Detail, and Settings/About/Privacy. A simple root navigation coordinator owns route and sheet state. `Scan` combines optional visual overlays with a text-first current-findings list, a clear scan state, manual pause/resume/save controls, and accessible detail navigation. Finding Detail is the canonical explanation surface. Overlays must have labels or a list alternative; color/animation alone never carries finding, severity, confidence, or state.
+Major surfaces: Onboarding, Camera Education/Permission, Scan, Scan Review, Finding Detail, Saved Scans, Saved Scan Detail, and Settings/About/Privacy. A simple root navigation coordinator owns route and sheet state. `Scan` combines optional visual overlays with a text-first current-findings list, a clear scan state, explicit Finish/Leave actions, and accessible detail navigation. `ScanReview` is the ephemeral completed-session surface and is not saved-scan history. Overlays must have labels or a list alternative; color/animation alone never carries finding, severity, confidence, or state.
 
 ## Accessibility architecture
 
@@ -213,6 +225,7 @@ AccessLens/
 ├── Features/
 │   ├── Onboarding/
 │   ├── Scan/
+│   ├── ScanReview/
 │   ├── Findings/
 │   ├── SavedScans/
 │   └── Settings/
@@ -240,11 +253,13 @@ Organize by feature first and place reusable, platform-facing capabilities in `C
 | Camera session controller | capture authorization/session/lifecycle state. |
 | Live analysis session coordinator | generation ID, scheduler, analyzer tasks, bounded opaque frame payload, stale-result gate, and handoff to evidence fusion. |
 | Finding stabilizer (lock-isolated, non-MainActor) | bounded candidate tracks/evidence, promotion, expiry, stable finding identity, and session isolation. |
-| Scan feature view model (`@MainActor`) | compact stabilized-finding presentation snapshot, VoiceOver deduplication, and user actions, derived from the live session. |
+| Scan feature view model (`@MainActor`) | current `ScanSession` lifecycle, compact stabilized-finding presentation snapshot, VoiceOver deduplication, and explicit finish/discard intent. |
+| Scan completion workflow | deterministic lifecycle transitions and immutable `CompletedScan` construction; no resource ownership or persistence. |
+| App navigator (`@MainActor`) | ephemeral `CompletedScan` route for Review and the Done-to-Home transition; not scan-history storage. |
 | Scan repository | saved scan records and transactions. |
 | Accessibility announcement coordinator (`@MainActor`) | coalescing/rate limit/deduplication of spoken announcements. |
 
-Transient live state includes frame/sample-buffer references, raw Vision observations, in-flight work, analysis generation, quality signals, temporary overlays, and live stabilization history. Persisted user data includes saved scan metadata, confirmed finding snapshots, user names, retained-evidence references, and report-relevant information. Raw frames, runtime queues, temporary overlays, and mutable live state are never persisted.
+Transient live state includes frame/sample-buffer references, raw Vision observations, in-flight work, analysis generation, quality signals, temporary overlays, live stabilization history, and the current `CompletedScan` route. Persisted user data includes future saved scan metadata, confirmed finding snapshots, user names, retained-evidence references, and report-relevant information. Milestone 8's completed review snapshot is explicitly transient and is not persisted. Raw frames, runtime queues, temporary overlays, and mutable live state are never persisted.
 
 ## Testing strategy
 

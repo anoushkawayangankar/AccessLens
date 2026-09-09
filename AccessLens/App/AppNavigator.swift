@@ -24,6 +24,7 @@ final class AppNavigator: ObservableObject {
 
 enum AppRoute: Hashable, Sendable {
     case scan
+    case scanReview(CompletedScan)
     case findingDetail(id: UUID)
     case savedScans
     case scanDetail(id: UUID)

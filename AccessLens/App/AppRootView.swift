@@ -44,9 +44,19 @@ struct AppRootView: View {
                 authorizationService: dependencies.cameraAuthorizationService,
                 sessionController: dependencies.cameraSessionController,
                 analysisCoordinator: dependencies.analysisCoordinator,
-                initialFindings: dependencies.scanFindingOverride,
-                forceAnalysisPresentation: dependencies.scanAnalysisPresentationOverride
+                initialFindingsProvider: dependencies.nextScanFindingOverride,
+                forceAnalysisPresentation: dependencies.scanAnalysisPresentationOverride,
+                onCompleted: { completedScan in
+                    navigator.navigate(to: .scanReview(completedScan))
+                },
+                onDiscard: {
+                    navigator.goBack()
+                }
             )
+        case let .scanReview(completedScan):
+            ScanReviewView(completedScan: completedScan) {
+                navigator.returnToRoot()
+            }
         default:
             FutureDestinationView(route: route)
         }
@@ -69,6 +79,8 @@ private struct FutureDestinationView: View {
         switch route {
         case .scan:
             "Scan"
+        case .scanReview:
+            "Scan Review"
         case .findingDetail:
             "Finding Detail"
         case .savedScans:

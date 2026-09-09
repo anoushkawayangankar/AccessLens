@@ -1,5 +1,6 @@
 import Combine
 import Foundation
+import OSLog
 import SwiftUI
 import UIKit
 
@@ -26,16 +27,21 @@ final class ScanViewModel: ObservableObject {
     @Published private(set) var settingsCouldNotOpen = false
     @Published private(set) var isAnalyzingEnvironment = false
     @Published private(set) var activeFindings: [AccessibilityFinding] = []
+    @Published private(set) var scanLifecycleState: ScanSessionLifecycleState = .idle
+    @Published private(set) var completionError: ScanCompletionError?
 
     private let authorizationService: any CameraAuthorizationProviding
     private let sessionController: CameraSessionController
     private let analysisCoordinator: AnalysisCoordinator
-    private let initialFindings: [AccessibilityFinding]
+    private let initialFindingsProvider: () -> [AccessibilityFinding]
     private let forceAnalysisPresentation: Bool
+    private let clock: any ScanSessionTimeProviding
     private var isVisible = false
     private var isApplicationActive = true
     private var hasActiveAnalysisSession = false
-    private var activeAnalysisSessionID: AnalysisSessionID?
+    private(set) var activeAnalysisSessionID: AnalysisSessionID?
+    private var workflow = ScanSessionWorkflow()
+    private var hasConsumedInitialPresentation = false
     private var announcedFindingIDs: Set<UUID> = []
 
     init(
@@ -43,13 +49,16 @@ final class ScanViewModel: ObservableObject {
         sessionController: CameraSessionController,
         analysisCoordinator: AnalysisCoordinator,
         initialFindings: [AccessibilityFinding] = [],
-        forceAnalysisPresentation: Bool = false
+        initialFindingsProvider: (() -> [AccessibilityFinding])? = nil,
+        forceAnalysisPresentation: Bool = false,
+        clock: any ScanSessionTimeProviding = SystemScanSessionClock()
     ) {
         self.authorizationService = authorizationService
         self.sessionController = sessionController
         self.analysisCoordinator = analysisCoordinator
-        self.initialFindings = initialFindings
+        self.initialFindingsProvider = initialFindingsProvider ?? { initialFindings }
         self.forceAnalysisPresentation = forceAnalysisPresentation
+        self.clock = clock
         authorization = authorizationService.currentAuthorization()
         sessionController.setAuthorization(authorization)
         analysisCoordinator.setResultHandler { [weak self] result in
@@ -69,6 +78,19 @@ final class ScanViewModel: ObservableObject {
         isAnalyzingEnvironment || forceAnalysisPresentation
     }
 
+    var canFinishScan: Bool {
+        scanLifecycleState == .scanning
+    }
+
+    var hasActiveLiveScan: Bool {
+        switch scanLifecycleState {
+        case .preparing, .scanning, .completing:
+            true
+        case .idle, .completed, .discarded:
+            false
+        }
+    }
+
     func appear() {
         isVisible = true
         authorization = authorizationService.currentAuthorization()
@@ -80,7 +102,11 @@ final class ScanViewModel: ObservableObject {
     func disappear() {
         isVisible = false
         sessionController.setScanVisible(false)
-        updateAnalysisSession()
+        if hasActiveLiveScan {
+            discardScan()
+        } else {
+            stopLiveAnalysis()
+        }
     }
 
     func handle(scenePhase: ScenePhase) {
@@ -103,28 +129,99 @@ final class ScanViewModel: ObservableObject {
         settingsCouldNotOpen = true
     }
 
+    /// Stops camera/analysis first, then freezes only the compact stabilized
+    /// finding values into an in-memory review snapshot. Repeated calls after
+    /// the first safely return nil.
+    func finishScan() -> CompletedScan? {
+        completionError = nil
+        guard workflow.beginCompletion() != nil else { return nil }
+        scanLifecycleState = .completing
+        AppLog.lifecycle.info("Scan completion requested")
+
+        // Ask the runtime to stop before collecting the final stable state.
+        // `completeSession` clears the analysis gate before cancelling work,
+        // which rejects any late OCR/contrast result deterministically.
+        sessionController.setScanVisible(false)
+        let finalFindings = stopLiveAnalysis(returningFinalFindings: true)
+
+        guard let completed = workflow.complete(with: finalFindings, at: clock.now()) else {
+            completionError = .couldNotCreateSnapshot
+            scanLifecycleState = .discarded
+            return nil
+        }
+
+        scanLifecycleState = .completed
+        activeFindings = []
+        announcedFindingIDs = []
+        AppLog.lifecycle.info("Scan completed")
+        return completed
+    }
+
+    /// Ends an active scan without producing a review snapshot. This is used
+    /// only after explicit user confirmation when leaving Scan.
+    func discardScan() {
+        guard hasActiveLiveScan else { return }
+        workflow.discard()
+        scanLifecycleState = .discarded
+        sessionController.setScanVisible(false)
+        _ = stopLiveAnalysis(returningFinalFindings: false)
+        activeFindings = []
+        announcedFindingIDs = []
+        AppLog.lifecycle.info("Scan discarded")
+    }
+
     private func updateAnalysisSession() {
         let shouldAnalyze = isVisible && isApplicationActive && authorization == .authorized
-        guard shouldAnalyze != hasActiveAnalysisSession else { return }
+        guard scanLifecycleState != .completed, scanLifecycleState != .discarded else { return }
 
-        hasActiveAnalysisSession = shouldAnalyze
-        if shouldAnalyze {
+        if shouldAnalyze, workflow.session == nil {
+            _ = workflow.start(at: clock.now())
+            scanLifecycleState = workflow.lifecycleState
+            AppLog.lifecycle.info("Scan started")
+        }
+
+        let shouldRunAnalysis = shouldAnalyze && scanLifecycleState == .scanning
+        guard shouldRunAnalysis != hasActiveAnalysisSession else { return }
+
+        if shouldRunAnalysis {
+            hasActiveAnalysisSession = true
             let sessionID = analysisCoordinator.beginSession()
             activeAnalysisSessionID = sessionID
-            activeFindings = initialFindings
+            if !hasConsumedInitialPresentation {
+                activeFindings = initialFindingsProvider()
+                hasConsumedInitialPresentation = true
+            } else {
+                activeFindings = []
+            }
             announcedFindingIDs = []
             isAnalyzingEnvironment = true
         } else {
-            activeAnalysisSessionID = nil
-            activeFindings = []
-            announcedFindingIDs = []
-            isAnalyzingEnvironment = false
-            analysisCoordinator.endSession()
+            stopLiveAnalysis()
         }
     }
 
-    private func receive(_ result: StabilizedAnalysisResult) {
-        guard activeAnalysisSessionID == result.sessionID else { return }
+    @discardableResult
+    private func stopLiveAnalysis(returningFinalFindings: Bool = false) -> [AccessibilityFinding] {
+        // The Scan view owns the last compact result that was already accepted
+        // for this session. Freeze it before clearing the coordinator; the
+        // coordinator's gate then rejects any later work.
+        let finalFindings = activeFindings
+        if hasActiveAnalysisSession {
+            hasActiveAnalysisSession = false
+            activeAnalysisSessionID = nil
+            _ = analysisCoordinator.completeSession()
+        } else {
+            analysisCoordinator.endSession()
+        }
+        activeFindings = []
+        announcedFindingIDs = []
+        isAnalyzingEnvironment = false
+        return returningFinalFindings ? finalFindings : []
+    }
+
+    func receive(_ result: StabilizedAnalysisResult) {
+        guard scanLifecycleState == .scanning,
+              activeAnalysisSessionID == result.sessionID else { return }
         activeFindings = result.findings
 
         let newIDs = result.newlyPromotedFindingIDs.subtracting(announcedFindingIDs)
@@ -137,4 +234,8 @@ final class ScanViewModel: ObservableObject {
             )
         }
     }
+}
+
+enum ScanCompletionError: Equatable, Sendable {
+    case couldNotCreateSnapshot
 }

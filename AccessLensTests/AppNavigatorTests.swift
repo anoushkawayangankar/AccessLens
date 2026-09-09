@@ -23,5 +23,18 @@ final class AppNavigatorTests: XCTestCase {
 
         XCTAssertTrue(navigator.path.isEmpty)
     }
-}
 
+    func testCompletedScanReviewUsesTypedNavigationDestination() {
+        let navigator = AppNavigator()
+        let snapshot = CompletedScan(
+            sessionID: UUID(),
+            startedAt: Date(timeIntervalSince1970: 1),
+            completedAt: Date(timeIntervalSince1970: 2),
+            findings: []
+        )
+
+        navigator.navigate(to: .scanReview(snapshot))
+
+        XCTAssertEqual(navigator.path, [.scanReview(snapshot)])
+    }
+}
