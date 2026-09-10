@@ -12,6 +12,15 @@ build/
 *.xcarchive
 *.ipa
 *.dSYM
+*.xcresult
+
+# Local persistence stores and SQLite sidecars (fixtures are generated in tests)
+*.store
+*.store-shm
+*.store-wal
+*.sqlite
+*.sqlite-shm
+*.sqlite-wal
 
 # Swift Package Manager local state
 .swiftpm/

@@ -172,6 +172,7 @@ final class AccessLensUITests: XCTestCase {
     ) -> XCUIApplication {
         let app = XCUIApplication()
         app.launchArguments += ["-accesslens-onboarding-state", onboardingState]
+        app.launchArguments += ["-accesslens-history", "empty"]
         if let cameraAuthorization {
             app.launchArguments += ["-accesslens-camera-authorization", cameraAuthorization]
         }

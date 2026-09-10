@@ -2,9 +2,11 @@ import SwiftUI
 
 struct HomeView: View {
     let onStartScan: () -> Void
+    let onHistory: () -> Void
 
-    init(onStartScan: @escaping () -> Void = {}) {
+    init(onStartScan: @escaping () -> Void = {}, onHistory: @escaping () -> Void = {}) {
         self.onStartScan = onStartScan
+        self.onHistory = onHistory
     }
 
     var body: some View {
@@ -34,6 +36,18 @@ struct HomeView: View {
                 .buttonStyle(.borderedProminent)
                 .frame(maxWidth: .infinity, minHeight: AppLayout.minimumTouchTarget)
                 .accessibilityIdentifier("start-scan")
+
+                Button(action: onHistory) {
+                    Text("Scan History")
+                        .frame(maxWidth: .infinity, minHeight: AppLayout.minimumTouchTarget)
+                        .contentShape(Rectangle())
+                }
+                    .buttonStyle(.bordered)
+                    .accessibilityIdentifier("scan-history")
+
+                Text("Completed scans are saved on this device, including text needed to explain findings. No camera images are saved. You can delete scans from Scan History.")
+                    .font(.footnote)
+                    .foregroundStyle(.secondary)
             }
             .frame(maxWidth: AppLayout.maximumReadableWidth, alignment: .leading)
             .padding(AppSpacing.page)

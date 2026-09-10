@@ -21,9 +21,11 @@ struct AppRootView: View {
                 OnboardingView(onboardingState: onboardingState)
             case .home:
                 NavigationStack(path: $navigator.path) {
-                    HomeView {
+                    HomeView(onStartScan: {
                         navigator.navigate(to: .scan)
-                    }
+                    }, onHistory: {
+                        navigator.navigate(to: .savedScans)
+                    })
                         .navigationDestination(for: AppRoute.self) { route in
                             destination(for: route)
                         }
@@ -47,15 +49,25 @@ struct AppRootView: View {
                 initialFindingsProvider: dependencies.nextScanFindingOverride,
                 forceAnalysisPresentation: dependencies.scanAnalysisPresentationOverride,
                 onCompleted: { completedScan in
-                    navigator.navigate(to: .scanReview(completedScan))
+                    navigator.showCompletedScan(completedScan)
                 },
                 onDiscard: {
                     navigator.goBack()
                 }
             )
         case let .scanReview(completedScan):
-            ScanReviewView(completedScan: completedScan) {
+            CompletedScanReviewView(scan: completedScan, repository: dependencies.completedScanRepository) {
                 navigator.returnToRoot()
+            }
+        case .savedScans:
+            ScanHistoryView(repository: dependencies.completedScanRepository, onOpen: { id in
+                navigator.navigate(to: .scanDetail(id: id))
+            }, onStartScan: {
+                navigator.navigate(to: .scan)
+            })
+        case let .scanDetail(id):
+            HistoricalScanReviewView(id: id, repository: dependencies.completedScanRepository) {
+                navigator.goBack()
             }
         default:
             FutureDestinationView(route: route)

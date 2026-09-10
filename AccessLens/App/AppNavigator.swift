@@ -20,6 +20,12 @@ final class AppNavigator: ObservableObject {
     func returnToRoot() {
         path.removeAll()
     }
+
+    /// Completion removes the live route so back navigation cannot reopen its
+    /// stopped camera. The review owns only the finished domain value.
+    func showCompletedScan(_ scan: CompletedScan) {
+        path = [.scanReview(scan)]
+    }
 }
 
 enum AppRoute: Hashable, Sendable {

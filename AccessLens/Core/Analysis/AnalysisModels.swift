@@ -204,6 +204,12 @@ nonisolated struct ContrastObservation: Identifiable, Equatable, Sendable, Hasha
 nonisolated struct ContrastRatio: Equatable, Sendable, Hashable {
     let value: Double
 
+    /// Reconstructs a validated estimate without recomputing or rounding it.
+    init?(estimatedValue: Double) {
+        guard estimatedValue.isFinite, (1...21).contains(estimatedValue) else { return nil }
+        value = estimatedValue
+    }
+
     init(lighterLuminance: Double, darkerLuminance: Double) {
         let lighter = max(lighterLuminance, darkerLuminance)
         let darker = min(lighterLuminance, darkerLuminance)

@@ -1,5 +1,7 @@
 import Foundation
 
+nonisolated enum ScanReviewContext: Sendable { case newlyCompleted, historical }
+
 /// Presentation-only transformation of an immutable completed scan. It has no
 /// camera, analyzer, persistence, or navigation dependency.
 nonisolated struct ScanReviewViewModel: Sendable {

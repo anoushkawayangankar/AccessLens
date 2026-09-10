@@ -3,7 +3,7 @@ import Foundation
 /// Creates application-scoped dependencies at the composition root.
 ///
 /// Feature services remain feature-owned. Camera runtime dependencies are
-/// composed here; analysis, persistence, and export remain future work.
+/// composed here alongside the local completed-scan repository.
 @MainActor
 final class AppDependencies {
     let navigator: AppNavigator
@@ -13,6 +13,7 @@ final class AppDependencies {
     let cameraSessionController: CameraSessionController
     let cameraLifecycleCoordinator: CameraLifecycleCoordinator
     let analysisCoordinator: AnalysisCoordinator
+    let completedScanRepository: any CompletedScanRepository
     /// DEBUG launch composition may provide deterministic evidence for one
     /// test scan. Production composition always returns an empty array.
     private let scanFindingOverrideProvider: ScanFindingOverrideProvider
@@ -25,10 +26,12 @@ final class AppDependencies {
         cameraAuthorizationService: (any CameraAuthorizationProviding)? = nil,
         cameraSessionController: CameraSessionController? = nil,
         analysisCoordinator: AnalysisCoordinator? = nil,
+        completedScanRepository: (any CompletedScanRepository)? = nil,
         scanFindingOverrides: [[AccessibilityFinding]] = [],
         scanAnalysisPresentationOverride: Bool = false
     ) {
         self.navigator = navigator ?? AppNavigator()
+        self.completedScanRepository = completedScanRepository ?? SwiftDataCompletedScanRepository()
         self.lifecycleCoordinator = lifecycleCoordinator ?? AppLifecycleCoordinator()
         self.onboardingState = onboardingState ?? OnboardingState(
             store: UserDefaultsOnboardingCompletionStore(defaults: .standard)
@@ -64,6 +67,11 @@ final class AppDependencies {
         }
 
         let scanFindingOverride = AppLaunchConfiguration.scanFindingOverride(arguments: arguments)
+        // UI tests opt into a fresh in-memory history on every launch. This
+        // branch is absent in Release and never touches the user's disk store.
+        let testRepository: (any CompletedScanRepository)? = arguments.contains("-accesslens-history")
+            ? InMemoryCompletedScanRepository(scans: AppLaunchConfiguration.historyOverride(arguments: arguments))
+            : nil
         let scanAnalysisPresentationOverride = AppLaunchConfiguration.scanAnalysisPresentationOverride(arguments: arguments)
         if let authorization = AppLaunchConfiguration.cameraAuthorizationOverride(arguments: arguments) {
             return AppDependencies(
@@ -71,6 +79,7 @@ final class AppDependencies {
                 cameraAuthorizationService: InMemoryCameraAuthorizationService(
                     authorization: authorization
                 ),
+                completedScanRepository: testRepository,
                 scanFindingOverrides: scanFindingOverride.isEmpty ? [] : [scanFindingOverride],
                 scanAnalysisPresentationOverride: scanAnalysisPresentationOverride
             )
@@ -79,6 +88,7 @@ final class AppDependencies {
         if let onboardingState {
             return AppDependencies(
                 onboardingState: onboardingState,
+                completedScanRepository: testRepository,
                 scanFindingOverrides: scanFindingOverride.isEmpty ? [] : [scanFindingOverride],
                 scanAnalysisPresentationOverride: scanAnalysisPresentationOverride
             )
@@ -105,6 +115,19 @@ private final class ScanFindingOverrideProvider {
 }
 
 private enum AppLaunchConfiguration {
+    #if DEBUG
+    static func historyOverride(arguments: [String]) -> [CompletedScan] {
+        guard let index = arguments.firstIndex(of: "-accesslens-history"),
+              arguments.indices.contains(index + 1), arguments[index + 1] == "seeded" else { return [] }
+        let findings = scanFindingOverride(arguments: ["-accesslens-scan-findings", "stable-low-contrast"])
+        guard let newer = UUID(uuidString: "33333333-3333-3333-3333-333333333333"),
+              let older = UUID(uuidString: "44444444-4444-4444-4444-444444444444") else { return [] }
+        return [
+            CompletedScan(sessionID: older, startedAt: Date(timeIntervalSince1970: 100), completedAt: Date(timeIntervalSince1970: 110), findings: []),
+            CompletedScan(sessionID: newer, startedAt: Date(timeIntervalSince1970: 200), completedAt: Date(timeIntervalSince1970: 210), findings: findings)
+        ]
+    }
+    #endif
     private static let onboardingStateArgument = "-accesslens-onboarding-state"
     private static let cameraAuthorizationArgument = "-accesslens-camera-authorization"
     private static let scanFindingsArgument = "-accesslens-scan-findings"

@@ -1,6 +1,6 @@
 # AccessLens — Production Architecture
 
-**Scope:** Milestone 0 design. This document intentionally defines future boundaries without implementing camera, Vision, persistence, UI, export, or networking.
+**Scope:** Production contract with implementation refinements through Milestone 9. Sections labeled with prior milestones record their scope at that time; the Milestone 9 persistence section supersedes the former in-memory-only completed-review lifetime. Export and reporting remain future work.
 
 ## Architectural shape
 
@@ -9,7 +9,8 @@ Use a straightforward SwiftUI feature structure with focused Apple-native servic
 ```text
 Camera frame → bounded scheduler → Vision requests → normalized observations
 → independent analyzers → finding candidates → confidence/evidence policy
-→ stabilizer → live stable findings → Finish Scan → immutable in-memory review snapshot
+→ stabilizer → live stable findings → Finish Scan → immutable completed snapshot
+→ local repository save → Scan Review / Scan History → historical Scan Review
 ```
 
 ## Domain model contract
@@ -160,6 +161,26 @@ Adopt **SwiftData** as the planned primary local store, with a dedicated reposit
 
 Writes use one transaction to save a complete scan/finding snapshot; autosave is deliberate and debounced, never per frame. Failed writes preserve the in-memory scan and offer retry. On launch/import, decode/validate IDs, enum compatibility, reference integrity, and bounded fields. Quarantine unreadable/corrupt records, log non-sensitive diagnostics, and offer delete/recovery without crashing. Rename/delete operations are repository transactions. Avoid sync/cloud configuration until an explicit future product decision.
 
+## Local persistence and scan history (Milestone 9)
+
+SwiftData is the production local store for the existing iOS 17+ target. `CompletedScanRepository` exposes asynchronous save, fetch-by-ID, newest-first summary fetch, and delete operations using domain values only. SwiftUI has no `@Query`, `ModelContext`, `@Model`, or SwiftData import. `SwiftDataCompletedScanRepository` is one application-composed actor: it lazily creates its private `ModelContainer`/`ModelContext` on its own executor, disables autosave, and keeps each fetch/mutate/save or rollback sequence synchronous within actor isolation. No managed object/context crosses executors and no new unchecked Sendable annotation is used. Store initialization failures retain the existing store and retry on a later operation; they never erase the database or silently fall back to memory.
+
+`ScanStorageSchemaV1` is a `VersionedSchema` (1.0.0) with `StoredScan` and dependent `StoredFinding` entities. Scan UUID is unique. The scan holds Date timestamps, record version, finding count, limitations, and a cascade-delete relationship. Each finding retains its stable ID and explicit position, category/title/explanation, evidence summary and strength, relevant finalized signage text, estimated ratio, normalized region if present, analysis provenance ID, bounded support count/time/sequence range, lifecycle meaning, and source analyzer identifiers. Supporting sequence endpoints are scalar provenance, not frames or a per-frame history. String identifiers preserve the full UInt64 range. Explicit string enum raw values are stable; no enum integer ordering is stored.
+
+`ScanStorageMapper` validates finite dates/numbers, date/sequence order, complete normalized regions, unique finding IDs, relationship positions/counts, ratio range, and bounded strings/finding/source counts. It reconstructs the exact domain evidence without recomputing contrast. Unknown record versions/categories/strengths/lifecycle values produce typed unsupported-record errors and are never guessed or silently omitted. Invalid or unsupported records remain logically quarantined in place: history metadata is still listed, opening shows a safe recoverable error, and the user can explicitly delete that record. A future schema change must preserve v1, add a new `VersionedSchema` and tested `SchemaMigrationPlan` stage, and verify old-store migration/rollback behavior. The v1 plan has no artificial migration stages.
+
+Completed snapshots are immutable. Saving an identical scan ID/value is an idempotent no-op; saving different evidence under that same ID fails as a conflict and preserves the first record. Save and delete use explicit `ModelContext.save()` with rollback on failure. Deleting an absent ID is a no-op; deleting an existing scan cascades only to its own finding records. There are no image assets to delete. Disk-backed recreation and cascade-delete integration tests verify persistence beyond actor/context lifetime.
+
+Finish Scan retains Milestone 8's stop/cancel/freeze boundary. The live navigation route is replaced by the completed route so Back cannot reopen a stopped scan. `CompletedScanSaveViewModel` owns the one automatic repository save; `CompletedScanReviewView` shows a saving state then the shared review on success or failure. Save failure keeps the full immutable value, shows product-safe text, and offers explicit Retry Save. Reappearance does not retry indefinitely or duplicate a successful save. Save work has no camera/image processing and runs off MainActor. Unsaved review data is lost if the user leaves or the process terminates; successful saves survive relaunch.
+
+Home exposes a secondary **Scan History** action with retention copy. `ScanHistoryViewModel` owns loading, sorted summary values, operation identity, delete state, and recoverable errors on MainActor. It refreshes when History is entered/returned to and after successful deletion, without polling. A stale pre-delete load cannot reinsert a deleted row. Rows sort by completion Date descending, then UUID string ascending, use locale-aware dates, and say “No potential findings” for zero-finding scans. Historical navigation reuses `.savedScans` and `.scanDetail(id:)`; the latter loads by ID and renders the same `ScanReviewView` in `.historical` context. It never saves again or touches camera/analysis. Live review Done returns Home; historical review Back returns History. Explicit Delete Scan buttons are available without a swipe gesture and always require confirmation. Failed deletes keep the row and provide retry guidance.
+
+Privacy boundary: the schema accepts only finalized `CompletedScan` evidence. Recognized text is stored only when it is explanatory context within a stabilized finding (including its evidence summary). No raw OCR stream, rejected text, transient candidate, stabilizer buffer, camera frame/video, raw image/image URL, crop, screenshot, pixel/sample buffer, or Vision object is stored. Home, save status, and History explain this retention. No networking, analytics, third-party dependency, new detector, export, or sharing is added. OSLog records only save/delete outcomes and load failures, never environmental text/evidence content or file paths.
+
+The store is `Library/Application Support/AccessLens/CompletedScans.store` inside the private application sandbox with SwiftData-managed sidecars. CloudKit is explicitly `.none`; no shared group or cloud container is configured. The directory requests `completeUntilFirstUserAuthentication`, consistent with the iOS default file-protection class; protection depends on device passcode/security configuration and actual database/sidecar behavior remains a physical-device check. No custom cryptography is introduced. Saved scans are user-created data and are not excluded from normal system backups: inclusion depends on the user's backup settings. OS backup is distinct from app-implemented synchronization and may retain earlier copies beyond deletion on this device. See [Apple file protection](https://developer.apple.com/documentation/uikit/encrypting-your-app-s-files) and [Apple backup exclusion guidance](https://developer.apple.com/documentation/foundation/urlresourcevalues/isexcludedfrombackup).
+
+Testing uses isolated SwiftData stores (in-memory plus temporary on-disk recreation tests) and a DEBUG-only actor test repository with configured errors. Every UI test launches with a fresh deterministic history; no test seeds or resets the user's production store. No storage model/context is used in views. Manual VoiceOver, maximum Dynamic Type, Voice Control, Light/Dark, small-screen/landscape, device-lock, and OS backup/restore behavior remain release validation requirements.
+
 ## First-run onboarding preference
 
 The sole first-run preference is a non-sensitive, namespaced Boolean stored through an injectable `OnboardingCompletionStoring` boundary. Production composition uses `UserDefaults`; tests, previews, and DEBUG-only UI-test launch overrides use deterministic in-memory storage. `OnboardingState` is the only owner of this completion state and gates the root view before `NavigationStack`, so onboarding completion cannot leave a history entry. This preference is deliberately separate from the future SwiftData scan repository. Onboarding intentionally has no global Skip action: its privacy and limitation explanations are essential context before reaching the app shell.
@@ -226,6 +247,7 @@ AccessLens/
 │   ├── Onboarding/
 │   ├── Scan/
 │   ├── ScanReview/
+│   ├── ScanHistory/
 │   ├── Findings/
 │   ├── SavedScans/
 │   └── Settings/
@@ -256,10 +278,12 @@ Organize by feature first and place reusable, platform-facing capabilities in `C
 | Scan feature view model (`@MainActor`) | current `ScanSession` lifecycle, compact stabilized-finding presentation snapshot, VoiceOver deduplication, and explicit finish/discard intent. |
 | Scan completion workflow | deterministic lifecycle transitions and immutable `CompletedScan` construction; no resource ownership or persistence. |
 | App navigator (`@MainActor`) | ephemeral `CompletedScan` route for Review and the Done-to-Home transition; not scan-history storage. |
-| Scan repository | saved scan records and transactions. |
+| Completed scan repository actor | sole private SwiftData context, schema mapping, saved scan records and explicit transactions. |
+| Completion save view model (`@MainActor`) | one immutable snapshot and retryable save status; does not own live analysis. |
+| History / historical review view models (`@MainActor`) | loading/error/delete state and domain summary/review values; no storage context. |
 | Accessibility announcement coordinator (`@MainActor`) | coalescing/rate limit/deduplication of spoken announcements. |
 
-Transient live state includes frame/sample-buffer references, raw Vision observations, in-flight work, analysis generation, quality signals, temporary overlays, live stabilization history, and the current `CompletedScan` route. Persisted user data includes future saved scan metadata, confirmed finding snapshots, user names, retained-evidence references, and report-relevant information. Milestone 8's completed review snapshot is explicitly transient and is not persisted. Raw frames, runtime queues, temporary overlays, and mutable live state are never persisted.
+Transient live state includes frame/sample-buffer references, raw Vision observations, in-flight work, analysis generation, quality signals, temporary overlays, and live stabilization history. Milestone 9 persists only completed scan metadata and finalized finding evidence through the repository. The navigation route holds an in-memory domain copy; persistence is independently owned. Names, image retention, reports, and export remain future work. Raw frames, runtime queues, temporary overlays, candidates, and mutable live state are never persisted.
 
 ## Testing strategy
 

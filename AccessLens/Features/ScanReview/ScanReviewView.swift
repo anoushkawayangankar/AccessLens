@@ -4,10 +4,19 @@ import SwiftUI
 struct ScanReviewView: View {
     let viewModel: ScanReviewViewModel
     let onDone: () -> Void
+    let context: ScanReviewContext
+    private let saveStatus: AnyView
 
-    init(completedScan: CompletedScan, onDone: @escaping () -> Void) {
+    init(completedScan: CompletedScan, context: ScanReviewContext = .newlyCompleted, onDone: @escaping () -> Void) {
+        self.init(completedScan: completedScan, context: context, onDone: onDone) { EmptyView() }
+    }
+
+    init<Status: View>(completedScan: CompletedScan, context: ScanReviewContext = .newlyCompleted,
+                      onDone: @escaping () -> Void, @ViewBuilder saveStatus: () -> Status) {
         viewModel = ScanReviewViewModel(completedScan: completedScan)
         self.onDone = onDone
+        self.context = context
+        self.saveStatus = AnyView(saveStatus())
     }
 
     var body: some View {
@@ -19,15 +28,19 @@ struct ScanReviewView: View {
                     .accessibilityIdentifier("scan-review-heading")
 
                 summarySection
+                saveStatus
                 findingsSection
                 limitationsSection
 
-                Button("Done") {
+                Button {
                     onDone()
+                } label: {
+                    Text(context == .historical ? "Back to History" : "Done")
+                        .frame(maxWidth: .infinity, minHeight: AppLayout.minimumTouchTarget)
+                        .contentShape(Rectangle())
                 }
                 .buttonStyle(.borderedProminent)
-                .frame(maxWidth: .infinity, minHeight: AppLayout.minimumTouchTarget)
-                .accessibilityHint("Returns to the AccessLens home screen.")
+                .accessibilityHint(context == .historical ? "Returns to Scan History." : "Returns to the AccessLens home screen.")
                 .accessibilityIdentifier("scan-review-done")
             }
             .frame(maxWidth: AppLayout.maximumReadableWidth, alignment: .leading)
@@ -43,8 +56,10 @@ struct ScanReviewView: View {
 
     private var summarySection: some View {
         VStack(alignment: .leading, spacing: AppSpacing.small) {
-            Label("Completed scan", systemImage: "checkmark.circle")
+            Label(context == .historical ? "Saved scan" : "Completed scan", systemImage: "checkmark.circle")
                 .font(.headline)
+            Text(viewModel.completedScan.completedAt, format: .dateTime.year().month().day().hour().minute())
+                .font(.subheadline)
             Text(viewModel.summary)
                 .font(.body.weight(.semibold))
                 .accessibilityIdentifier("scan-review-summary")
@@ -94,6 +109,8 @@ struct ScanReviewView: View {
                     .font(.body.weight(.semibold))
             }
             Text(finding.explanation)
+                .font(.body)
+            Text(finding.evidenceSummary)
                 .font(.body)
             Text("Evidence strength: \(finding.evidenceStrength.rawValue.capitalized)")
                 .font(.subheadline)

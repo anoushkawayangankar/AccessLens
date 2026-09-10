@@ -60,19 +60,19 @@ nonisolated struct AccessibilityFinding: Identifiable, Equatable, Sendable, Hash
 
 /// Only categories backed by currently implemented analyzers belong here.
 nonisolated enum AccessibilityFindingCategory: String, Equatable, Sendable, Hashable {
-    case potentialLowContrastText
+    case potentialLowContrastText = "potentialLowContrastText"
 }
 
 /// Evidence strength communicates repeatability and usable evidence, not a
 /// probability, legal conclusion, or raw Vision confidence.
 nonisolated enum FindingEvidenceStrength: String, Equatable, Sendable, Hashable {
-    case limited
-    case moderate
-    case strong
+    case limited = "limited"
+    case moderate = "moderate"
+    case strong = "strong"
 }
 
 nonisolated enum FindingLifecycleState: String, Equatable, Sendable, Hashable {
-    case active
+    case active = "active"
 }
 
 nonisolated struct FindingFrameRange: Equatable, Sendable, Hashable {

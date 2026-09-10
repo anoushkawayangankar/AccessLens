@@ -42,8 +42,8 @@ nonisolated struct ScanSession: Identifiable, Equatable, Sendable, Hashable {
 }
 
 /// An immutable, review-only record of evidence collected during one finished
-/// scan. It lives solely in memory in Milestone 8 and is never a persistence
-/// DTO or a substitute for a saved scan.
+/// scan. Persistence maps this value into separate storage models; this type
+/// has no storage framework or context dependency.
 nonisolated struct CompletedScan: Identifiable, Equatable, Sendable, Hashable {
     let id: UUID
     let sessionID: UUID

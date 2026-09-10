@@ -8,4 +8,5 @@ nonisolated enum AppLog {
     static let camera = Logger(subsystem: subsystem, category: "camera")
     static let analysis = Logger(subsystem: subsystem, category: "analysis")
     static let vision = Logger(subsystem: subsystem, category: "vision")
+    static let persistence = Logger(subsystem: subsystem, category: "persistence")
 }
