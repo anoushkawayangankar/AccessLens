@@ -58,7 +58,7 @@ nonisolated final class VisionTextAnalyzer: AccessibilityAnalyzer {
         priorOutput _: AnalyzerOutput
     ) async throws -> AnalyzerOutput {
         try Task.checkCancellation()
-        guard let payload = context.payload else {
+        guard let imageBuffer = context.payload?.imageBuffer else {
             throw AnalysisError.invalidFrame
         }
         guard let orientation = context.frame.orientation else {
@@ -73,7 +73,7 @@ nonisolated final class VisionTextAnalyzer: AccessibilityAnalyzer {
 
         do {
             let handler = VNImageRequestHandler(
-                cmSampleBuffer: payload.sampleBuffer,
+                cvPixelBuffer: imageBuffer,
                 orientation: orientation.cgImagePropertyOrientation,
                 options: [:]
             )

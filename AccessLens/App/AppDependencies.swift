@@ -12,6 +12,7 @@ final class AppDependencies {
     let cameraAuthorizationService: any CameraAuthorizationProviding
     let cameraSessionController: CameraSessionController
     let cameraLifecycleCoordinator: CameraLifecycleCoordinator
+    let passageCaptureController: RoomPlanPassageCaptureController
     let analysisCoordinator: AnalysisCoordinator
     let completedScanRepository: any CompletedScanRepository
     let guidanceProvider: any AccessibilityGuidanceProviding
@@ -26,6 +27,7 @@ final class AppDependencies {
         onboardingState: OnboardingState? = nil,
         cameraAuthorizationService: (any CameraAuthorizationProviding)? = nil,
         cameraSessionController: CameraSessionController? = nil,
+        passageCaptureController: RoomPlanPassageCaptureController? = nil,
         analysisCoordinator: AnalysisCoordinator? = nil,
         completedScanRepository: (any CompletedScanRepository)? = nil,
         guidanceProvider: any AccessibilityGuidanceProviding = DeterministicAccessibilityGuidanceProvider(),
@@ -44,9 +46,19 @@ final class AppDependencies {
         self.cameraSessionController = sessionController
         self.cameraLifecycleCoordinator = CameraLifecycleCoordinator(sessionController: sessionController)
         let coordinator = analysisCoordinator ?? AnalysisCoordinator(
-            analyzers: [VisionTextAnalyzer(), VisualContrastAnalyzer()]
+            analyzers: [VisionTextAnalyzer(), VisualContrastAnalyzer(), PassageAccessibilityAnalyzer()]
         )
         self.analysisCoordinator = coordinator
+        self.passageCaptureController = passageCaptureController ?? RoomPlanPassageCaptureController(
+            frameHandler: { [coordinator] imageBuffer, timestamp, orientation, passageSurfaces in
+                coordinator.roomPlanDidOutput(
+                    imageBuffer: imageBuffer,
+                    presentationTimeSeconds: timestamp,
+                    orientation: orientation,
+                    passageSurfaces: passageSurfaces
+                )
+            }
+        )
         scanFindingOverrideProvider = ScanFindingOverrideProvider(overrides: scanFindingOverrides)
         self.scanAnalysisPresentationOverride = scanAnalysisPresentationOverride
         sessionController.frameSource.consumer = coordinator
@@ -121,8 +133,10 @@ private enum AppLaunchConfiguration {
     #if DEBUG
     static func historyOverride(arguments: [String]) -> [CompletedScan] {
         guard let index = arguments.firstIndex(of: "-accesslens-history"),
-              arguments.indices.contains(index + 1), arguments[index + 1] == "seeded" else { return [] }
-        let findings = scanFindingOverride(arguments: ["-accesslens-scan-findings", "stable-low-contrast"])
+              arguments.indices.contains(index + 1),
+              ["seeded", "passage"].contains(arguments[index + 1]) else { return [] }
+        let findingKind = arguments[index + 1] == "passage" ? "stable-passage" : "stable-low-contrast"
+        let findings = scanFindingOverride(arguments: ["-accesslens-scan-findings", findingKind])
         guard let newer = UUID(uuidString: "33333333-3333-3333-3333-333333333333"),
               let older = UUID(uuidString: "44444444-4444-4444-4444-444444444444") else { return [] }
         return [
@@ -181,7 +195,7 @@ private enum AppLaunchConfiguration {
         }
         let valueIndex = arguments.index(after: argumentIndex)
         guard valueIndex < arguments.endIndex,
-              ["stable-low-contrast", "multiple-low-contrast"].contains(arguments[valueIndex]) else {
+              ["stable-low-contrast", "multiple-low-contrast", "stable-passage"].contains(arguments[valueIndex]) else {
             return []
         }
 
@@ -190,6 +204,30 @@ private enum AppLaunchConfiguration {
             return []
         }
         let sessionID = AnalysisSessionID(rawValue: sessionUUID)
+        if arguments[valueIndex] == "stable-passage" {
+            return [AccessibilityFinding(
+                id: findingID,
+                category: .potentialNarrowPassage,
+                title: "Potential narrow passage",
+                explanation: "The visible clear opening may offer limited usable space for passage.",
+                evidenceSummary: "The same opening was observed across three analyses with usable LiDAR-supported evidence.",
+                evidenceStrength: .moderate,
+                region: NormalizedRegion(x: 0.2, y: 0.1, width: 0.4, height: 0.8),
+                firstObservedTime: 1,
+                lastObservedTime: 3,
+                supportingFrameRange: FindingFrameRange(first: .init(rawValue: 1), last: .init(rawValue: 3)),
+                supportingObservationCount: 3,
+                sessionID: sessionID,
+                sourceAnalyzerIDs: [AnalyzerIdentifier(rawValue: "roomplan.passage.v1")],
+                relevantText: nil,
+                estimatedContrastRatio: nil,
+                passageEvidence: PassageFindingEvidence(
+                    estimatedWidth: PassageWidth(meters: 0.84),
+                    measurementMethod: .roomPlanLiDAR,
+                    measurementQuality: .usable
+                )
+            )]
+        }
         let contexts = arguments[valueIndex] == "multiple-low-contrast" ? ["EXIT", "ELEVATOR"] : ["EXIT"]
         return contexts.enumerated().map { index, text in AccessibilityFinding(
             id: index == 0 ? findingID : sessionUUID,
@@ -222,6 +260,6 @@ private enum AppLaunchConfiguration {
         }
         let valueIndex = arguments.index(after: argumentIndex)
         guard valueIndex < arguments.endIndex else { return false }
-        return ["stable-low-contrast", "multiple-low-contrast", "analyzing-empty"].contains(arguments[valueIndex])
+        return ["stable-low-contrast", "multiple-low-contrast", "stable-passage", "analyzing-empty"].contains(arguments[valueIndex])
     }
 }

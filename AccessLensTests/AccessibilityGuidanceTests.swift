@@ -5,7 +5,7 @@ final class AccessibilityGuidanceTests: XCTestCase {
     private let provider = DeterministicAccessibilityGuidanceProvider()
 
     func testEverySupportedCategoryHasStructuredActionableGuidance() {
-        for category in AccessibilityFindingCategory.allCases {
+        let category = AccessibilityFindingCategory.potentialLowContrastText
             let finding = fixture(category: category)
             let guidance = provider.guidance(for: finding)
             XCTAssertEqual(guidance.ruleID, "text.potential-low-contrast")
@@ -21,7 +21,6 @@ final class AccessibilityGuidanceTests: XCTestCase {
             XCTAssertTrue(guidance.possibleImprovements.allSatisfy { !$0.text.isEmpty })
             XCTAssertTrue(guidance.limitations.contains("camera"))
             XCTAssertTrue(guidance.limitations.contains("not a direct measurement"))
-        }
     }
 
     func testRepeatedInputIsDeterministicAndDoesNotMutateEvidence() {
@@ -30,6 +29,35 @@ final class AccessibilityGuidanceTests: XCTestCase {
         for _ in 0..<20 { XCTAssertEqual(provider.guidance(for: finding), expected) }
         XCTAssertEqual(finding.relevantText, "EXIT")
         XCTAssertEqual(finding.evidenceSummary, "Original finalized evidence")
+    }
+
+    func testPassageGuidanceRequiresDirectMeasurementAndPreservesUncertainty() {
+        let finding = ScanPersistenceFixtures.passageFinding()
+        let guidance = provider.guidance(for: finding)
+        XCTAssertEqual(guidance.ruleID, "passage.potential-narrow")
+        XCTAssertEqual(guidance.ruleVersion, 1)
+        XCTAssertEqual(guidance.observation.passageEvidence, finding.passageEvidence)
+        XCTAssertNil(guidance.observation.recognizedText)
+        XCTAssertNil(guidance.observation.estimatedContrastRatio)
+        XCTAssertTrue(guidance.observation.summary.contains("estimated"))
+        XCTAssertTrue(guidance.whatToCheck.contains { $0.id == .measureClearOpening })
+        XCTAssertTrue(guidance.whatToCheck.contains { $0.id == .inspectNarrowestPoint })
+        XCTAssertTrue(guidance.possibleImprovements.contains { $0.id == .perpendicularRecapture })
+        XCTAssertTrue(guidance.limitations.contains("LiDAR"))
+        XCTAssertTrue(guidance.limitations.contains("not a survey measurement"))
+        XCTAssertFalse(guidance.interpretation.localizedCaseInsensitiveContains("compliant"))
+    }
+
+    func testPassageGuidanceIsDeterministicForHistoricalRoundTrip() async throws {
+        let repository = SwiftDataCompletedScanRepository(inMemory: true)
+        let scan = ScanPersistenceFixtures.passageScan()
+        try await repository.save(scan)
+        let fetched = try await repository.fetch(id: scan.id)
+        let restored = try XCTUnwrap(fetched)
+        XCTAssertEqual(
+            provider.guidance(for: try XCTUnwrap(restored.findings.first)),
+            provider.guidance(for: try XCTUnwrap(scan.findings.first))
+        )
     }
 
     func testTextIsContextAndDoesNotChangeAdviceOrInferSignRequirements() {
@@ -79,7 +107,7 @@ final class AccessibilityGuidanceTests: XCTestCase {
         XCTAssertNil(fallback.observation.recognizedText)
     }
 
-    func testHistoricalV1EvidenceProducesSameGuidanceWithoutChangingStorage() async throws {
+    func testHistoricalEvidenceProducesSameGuidanceWithoutChangingStorage() async throws {
         let repository = SwiftDataCompletedScanRepository(inMemory: true)
         let original = ScanPersistenceFixtures.scan(findingCount: 2)
         try await repository.save(original)
@@ -88,7 +116,7 @@ final class AccessibilityGuidanceTests: XCTestCase {
         XCTAssertEqual(restored, original)
         XCTAssertEqual(restored.findings.map(provider.guidance), original.findings.map(provider.guidance))
         let record = try ScanStorageMapper.stored(restored)
-        XCTAssertEqual(record.recordVersion, 1)
+        XCTAssertEqual(record.recordVersion, 2)
         XCTAssertEqual(try ScanStorageMapper.domain(record), original)
     }
 

@@ -20,6 +20,19 @@ nonisolated struct GuidanceObservation: Equatable, Sendable {
     let summary: String
     let recognizedText: String?
     let estimatedContrastRatio: ContrastRatio?
+    let passageEvidence: PassageFindingEvidence?
+
+    init(
+        summary: String,
+        recognizedText: String?,
+        estimatedContrastRatio: ContrastRatio?,
+        passageEvidence: PassageFindingEvidence? = nil
+    ) {
+        self.summary = summary
+        self.recognizedText = recognizedText
+        self.estimatedContrastRatio = estimatedContrastRatio
+        self.passageEvidence = passageEvidence
+    }
 }
 
 /// Semantic IDs keep action identity independent of translated display text.
@@ -27,6 +40,8 @@ nonisolated struct GuidanceAction: Identifiable, Equatable, Sendable {
     enum ID: String, Sendable {
         case viewingPosition, representativeLighting, confirmText
         case increaseContrast, simplifyBackground, recheckLighting, reviewDirectly
+        case measureClearOpening, inspectNarrowestPoint, removeTemporaryObstructions
+        case improveClearance, perpendicularRecapture
     }
     let id: ID
     let text: String

@@ -83,19 +83,26 @@ nonisolated struct AnalysisFrame: Equatable, Sendable {
 
 /// An opaque, bounded handoff of the frame currently admitted by the analysis
 /// scheduler. The payload is immutable and is retained only by one in-flight
-/// analysis or the single latest pending analysis. `CMSampleBuffer` is not
+/// analysis or the single latest pending analysis. Camera framework objects are not
 /// exposed to UI, persistence, or domain models.
 ///
-/// CoreMedia does not provide a Sendable annotation for `CMSampleBuffer`.
-/// This narrow unchecked boundary is justified by scheduler ownership: after
+/// CoreVideo does not provide a Sendable annotation for `CVPixelBuffer`.
+/// This narrow unchecked boundary is justified by immutable-buffer scheduler ownership: after
 /// the capture callback hands a payload to the scheduler, exactly one analyzer
 /// task reads it and no code mutates it. The scheduler drops the reference when
 /// the task completes, is cancelled, or is replaced.
 nonisolated final class AnalysisFramePayload: @unchecked Sendable {
-    let sampleBuffer: CMSampleBuffer
+    let imageBuffer: CVPixelBuffer?
+    let passageSurfaces: [PassageSurfaceEvidence]
 
-    init(sampleBuffer: CMSampleBuffer) {
-        self.sampleBuffer = sampleBuffer
+    init(sampleBuffer: CMSampleBuffer, passageSurfaces: [PassageSurfaceEvidence] = []) {
+        imageBuffer = CMSampleBufferGetImageBuffer(sampleBuffer)
+        self.passageSurfaces = Array(passageSurfaces.prefix(8))
+    }
+
+    init(imageBuffer: CVPixelBuffer, passageSurfaces: [PassageSurfaceEvidence]) {
+        self.imageBuffer = imageBuffer
+        self.passageSurfaces = Array(passageSurfaces.prefix(8))
     }
 }
 
@@ -273,6 +280,8 @@ nonisolated struct FindingCandidate: Identifiable, Equatable, Sendable, Hashable
     let sourceAnalyzerIDs: [AnalyzerIdentifier]
     let estimatedContrastRatio: ContrastRatio?
     let contrastEvidenceQuality: ContrastEvidenceQuality?
+    let passageSurfaceID: UUID?
+    let passageEvidence: PassageFindingEvidence?
 
     init(
         id: UUID = UUID(),
@@ -288,7 +297,9 @@ nonisolated struct FindingCandidate: Identifiable, Equatable, Sendable, Hashable
         sourceAnalyzerID: AnalyzerIdentifier = AnalyzerIdentifier(rawValue: "unknown"),
         sourceAnalyzerIDs: [AnalyzerIdentifier]? = nil,
         estimatedContrastRatio: ContrastRatio? = nil,
-        contrastEvidenceQuality: ContrastEvidenceQuality? = nil
+        contrastEvidenceQuality: ContrastEvidenceQuality? = nil,
+        passageSurfaceID: UUID? = nil,
+        passageEvidence: PassageFindingEvidence? = nil
     ) {
         self.id = id
         self.sessionID = sessionID
@@ -305,6 +316,8 @@ nonisolated struct FindingCandidate: Identifiable, Equatable, Sendable, Hashable
             .sorted { $0.rawValue < $1.rawValue }
         self.estimatedContrastRatio = estimatedContrastRatio
         self.contrastEvidenceQuality = contrastEvidenceQuality
+        self.passageSurfaceID = passageSurfaceID
+        self.passageEvidence = passageEvidence
     }
 }
 
@@ -314,23 +327,27 @@ nonisolated enum FindingCandidateCategory: String, Equatable, Sendable, Hashable
     case unclassified
     case environmentalSignage
     case potentialLowContrastText
+    case potentialNarrowPassage
 }
 
 nonisolated struct AnalyzerOutput: Equatable, Sendable {
     let observations: [NormalizedObservation]
     let textObservations: [RecognizedTextObservation]
     let contrastObservations: [ContrastObservation]
+    let passageObservations: [PassageObservation]
     let candidates: [FindingCandidate]
 
     init(
         observations: [NormalizedObservation] = [],
         textObservations: [RecognizedTextObservation] = [],
         contrastObservations: [ContrastObservation] = [],
+        passageObservations: [PassageObservation] = [],
         candidates: [FindingCandidate] = []
     ) {
         self.observations = observations
         self.textObservations = textObservations
         self.contrastObservations = contrastObservations
+        self.passageObservations = passageObservations
         self.candidates = candidates
     }
 
@@ -345,6 +362,10 @@ nonisolated enum AnalysisError: Error, Equatable, Sendable {
     case unsupportedPixelFormat
     case insufficientEvidence
     case unsupportedOrientation
+    case insufficientCalibration
+    case depthUnavailable
+    case invalidGeometry
+    case insufficientSceneEvidence
     case analyzerFailed(AnalyzerIdentifier)
     case cancelled
     case staleResult
@@ -361,6 +382,7 @@ nonisolated struct AnalysisPassResult: Equatable, Sendable {
     let observations: [NormalizedObservation]
     let textObservations: [RecognizedTextObservation]
     let contrastObservations: [ContrastObservation]
+    let passageObservations: [PassageObservation]
     let candidates: [FindingCandidate]
     let failures: [AnalysisFailure]
 }

@@ -7,6 +7,8 @@ nonisolated struct DeterministicAccessibilityGuidanceProvider: AccessibilityGuid
         switch finding.category {
         case .potentialLowContrastText:
             return lowContrastGuidance(for: finding)
+        case .potentialNarrowPassage:
+            return narrowPassageGuidance(for: finding)
         }
     }
 
@@ -58,6 +60,45 @@ nonisolated struct DeterministicAccessibilityGuidanceProvider: AccessibilityGuid
             verificationNote: finding.evidenceStrength == .limited
                 ? String(localized: "Evidence is limited. Verify the observation directly before deciding whether a change would help.")
                 : String(localized: "Evidence strength describes the supporting camera observations, not certainty. Verify the environment directly before deciding whether a change would help.")
+        )
+    }
+
+    private func narrowPassageGuidance(for finding: AccessibilityFinding) -> AccessibilityGuidance {
+        let evidence = finding.passageEvidence
+        let observation: String
+        if let width = evidence?.estimatedWidth {
+            observation = String(
+                localized: "Repeated LiDAR-supported room observations produced an estimated opening width of \(width.measurement.formatted(.measurement(width: .abbreviated, usage: .asProvided)))."
+            )
+        } else {
+            observation = String(localized: "Repeated room observations indicated a passage that may be narrow. A usable width estimate is not available.")
+        }
+
+        return AccessibilityGuidance(
+            ruleID: "passage.potential-narrow", ruleVersion: 1,
+            title: String(localized: "Potential narrow passage"),
+            observation: GuidanceObservation(
+                summary: observation,
+                recognizedText: nil,
+                estimatedContrastRatio: nil,
+                passageEvidence: evidence
+            ),
+            interpretation: String(localized: "The visible clear opening may offer limited usable space for people moving through the passage."),
+            whyItMatters: String(localized: "Narrow clear openings can make passage more difficult for people using mobility devices or moving with support."),
+            whatToCheck: [
+                GuidanceAction(id: .measureClearOpening, text: String(localized: "Measure the clear opening directly with a suitable physical measuring tool before making an accessibility decision.")),
+                GuidanceAction(id: .inspectNarrowestPoint, text: String(localized: "Check the narrowest usable portion of the opening, including handles, trim, and objects that project into the path.")),
+                GuidanceAction(id: .removeTemporaryObstructions, text: String(localized: "Inspect whether temporary objects are reducing the usable passage."))
+            ],
+            possibleImprovements: [
+                GuidanceAction(id: .improveClearance, text: String(localized: "Where appropriate, consider rearranging removable objects to preserve the clearest usable route.")),
+                GuidanceAction(id: .perpendicularRecapture, text: String(localized: "If using AccessLens to check again, keep the full opening in view and position the camera as squarely to it as practical."))
+            ],
+            limitations: String(localized: "The estimate uses RoomPlan geometry on a supported LiDAR device. Camera angle, incomplete capture, reflective surfaces, and room reconstruction can affect it. It is not a survey measurement or a formal standards assessment."),
+            evidenceStrength: finding.evidenceStrength,
+            verificationNote: finding.evidenceStrength == .limited
+                ? String(localized: "Evidence is limited. Verify the opening directly and do not rely on the estimate alone.")
+                : String(localized: "Evidence strength describes repeated camera and room-geometry observations, not measurement certainty. Verify the clear opening directly.")
         )
     }
 }

@@ -32,6 +32,7 @@ final class ScanViewModel: ObservableObject {
 
     private let authorizationService: any CameraAuthorizationProviding
     private let sessionController: CameraSessionController
+    private let passageCaptureController: RoomPlanPassageCaptureController
     private let analysisCoordinator: AnalysisCoordinator
     private let initialFindingsProvider: () -> [AccessibilityFinding]
     private let forceAnalysisPresentation: Bool
@@ -47,6 +48,7 @@ final class ScanViewModel: ObservableObject {
     init(
         authorizationService: any CameraAuthorizationProviding,
         sessionController: CameraSessionController,
+        passageCaptureController: RoomPlanPassageCaptureController? = nil,
         analysisCoordinator: AnalysisCoordinator,
         initialFindings: [AccessibilityFinding] = [],
         initialFindingsProvider: (() -> [AccessibilityFinding])? = nil,
@@ -55,12 +57,17 @@ final class ScanViewModel: ObservableObject {
     ) {
         self.authorizationService = authorizationService
         self.sessionController = sessionController
+        self.passageCaptureController = passageCaptureController ?? RoomPlanPassageCaptureController(
+            roomPlanSupported: false,
+            frameHandler: { _, _, _, _ in }
+        )
         self.analysisCoordinator = analysisCoordinator
         self.initialFindingsProvider = initialFindingsProvider ?? { initialFindings }
         self.forceAnalysisPresentation = forceAnalysisPresentation
         self.clock = clock
         authorization = authorizationService.currentAuthorization()
         sessionController.setAuthorization(authorization)
+        self.passageCaptureController.setAuthorization(authorization)
         analysisCoordinator.setResultHandler { [weak self] result in
             Task { @MainActor [weak self] in
                 self?.receive(result)
@@ -82,6 +89,10 @@ final class ScanViewModel: ObservableObject {
         scanLifecycleState == .scanning
     }
 
+    var usesPassageCapture: Bool {
+        passageCaptureController.capability.supportsPassageAnalysis
+    }
+
     var hasActiveLiveScan: Bool {
         switch scanLifecycleState {
         case .preparing, .scanning, .completing:
@@ -95,13 +106,15 @@ final class ScanViewModel: ObservableObject {
         isVisible = true
         authorization = authorizationService.currentAuthorization()
         sessionController.setAuthorization(authorization)
-        sessionController.setScanVisible(true)
+        passageCaptureController.setAuthorization(authorization)
+        applyCaptureVisibility()
         updateAnalysisSession()
     }
 
     func disappear() {
         isVisible = false
         sessionController.setScanVisible(false)
+        passageCaptureController.setScanVisible(false)
         if hasActiveLiveScan {
             discardScan()
         } else {
@@ -111,6 +124,8 @@ final class ScanViewModel: ObservableObject {
 
     func handle(scenePhase: ScenePhase) {
         isApplicationActive = scenePhase == .active
+        passageCaptureController.setApplicationActive(isApplicationActive)
+        applyCaptureVisibility()
         updateAnalysisSession()
     }
 
@@ -122,6 +137,8 @@ final class ScanViewModel: ObservableObject {
         authorization = updatedAuthorization
         isRequestingPermission = false
         sessionController.setAuthorization(updatedAuthorization)
+        passageCaptureController.setAuthorization(updatedAuthorization)
+        applyCaptureVisibility()
         updateAnalysisSession()
     }
 
@@ -142,6 +159,7 @@ final class ScanViewModel: ObservableObject {
         // `completeSession` clears the analysis gate before cancelling work,
         // which rejects any late OCR/contrast result deterministically.
         sessionController.setScanVisible(false)
+        passageCaptureController.setScanVisible(false)
         let finalFindings = stopLiveAnalysis(returningFinalFindings: true)
 
         guard let completed = workflow.complete(with: finalFindings, at: clock.now()) else {
@@ -164,6 +182,7 @@ final class ScanViewModel: ObservableObject {
         workflow.discard()
         scanLifecycleState = .discarded
         sessionController.setScanVisible(false)
+        passageCaptureController.setScanVisible(false)
         _ = stopLiveAnalysis(returningFinalFindings: false)
         activeFindings = []
         announcedFindingIDs = []
@@ -198,6 +217,12 @@ final class ScanViewModel: ObservableObject {
         } else {
             stopLiveAnalysis()
         }
+    }
+
+    private func applyCaptureVisibility() {
+        let shouldShowCapture = isVisible && isApplicationActive
+        sessionController.setScanVisible(shouldShowCapture && !usesPassageCapture)
+        passageCaptureController.setScanVisible(shouldShowCapture && usesPassageCapture)
     }
 
     @discardableResult

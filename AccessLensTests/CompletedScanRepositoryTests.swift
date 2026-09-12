@@ -12,6 +12,18 @@ final class CompletedScanRepositoryTests: XCTestCase {
         XCTAssertEqual(restored, scan)
     }
 
+    func testPassageFindingRoundTripPreservesFinalizedMetricEvidenceOnly() async throws {
+        let repository = SwiftDataCompletedScanRepository(inMemory: true)
+        let scan = ScanPersistenceFixtures.passageScan()
+        try await repository.save(scan)
+        let restored = try await repository.fetch(id: scan.id)
+        XCTAssertEqual(restored, scan)
+        XCTAssertEqual(restored?.findings.first?.passageEvidence?.measurementMethod, .roomPlanLiDAR)
+        XCTAssertEqual(restored?.findings.first?.passageEvidence?.estimatedWidth?.meters, 0.84)
+        XCTAssertNil(restored?.findings.first?.estimatedContrastRatio)
+        XCTAssertNil(restored?.findings.first?.relevantText)
+    }
+
     func testZeroAndMultipleFindingsKeepTheirOrderAndIdentity() async throws {
         let repository = SwiftDataCompletedScanRepository(inMemory: true)
         for count in [0, 3] {
@@ -87,12 +99,12 @@ final class CompletedScanRepositoryTests: XCTestCase {
         try await readDeleteAndRelease(scan, url: url)
 
         // Independent container confirms both parent and dependent rows are gone.
-        let schema = Schema(versionedSchema: ScanStorageSchemaV1.self)
+        let schema = Schema(versionedSchema: ScanStorageSchemaV2.self)
         let container = try ModelContainer(for: schema, migrationPlan: ScanStorageMigrationPlan.self,
             configurations: [ModelConfiguration(schema: schema, url: url, cloudKitDatabase: .none)])
         let context = ModelContext(container)
-        XCTAssertEqual(try context.fetchCount(FetchDescriptor<ScanStorageSchemaV1.StoredScan>()), 0)
-        XCTAssertEqual(try context.fetchCount(FetchDescriptor<ScanStorageSchemaV1.StoredFinding>()), 0)
+        XCTAssertEqual(try context.fetchCount(FetchDescriptor<ScanStorageSchemaV2.StoredScan>()), 0)
+        XCTAssertEqual(try context.fetchCount(FetchDescriptor<ScanStorageSchemaV2.StoredFinding>()), 0)
     }
 
     private func saveAndRelease(_ scan: CompletedScan, url: URL) async throws {
@@ -176,7 +188,7 @@ final class CompletedScanRepositoryTests: XCTestCase {
     }
 
     private func writeUnsupportedRecord(_ scan: CompletedScan, url: URL) throws {
-        let schema = Schema(versionedSchema: ScanStorageSchemaV1.self)
+        let schema = Schema(versionedSchema: ScanStorageSchemaV2.self)
         let container = try ModelContainer(for: schema, migrationPlan: ScanStorageMigrationPlan.self,
             configurations: [ModelConfiguration(schema: schema, url: url, cloudKitDatabase: .none)])
         let context = ModelContext(container)
@@ -184,6 +196,35 @@ final class CompletedScanRepositoryTests: XCTestCase {
         let finding = try XCTUnwrap(record.findings.first)
         finding.category = "futureCategory"
         context.insert(record)
+        try context.save()
+    }
+
+    func testV1StoreMigratesAndRetainsLegacyScanWithoutPassageEvidence() async throws {
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent("AccessLensLegacyTest-\(UUID())")
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let url = directory.appendingPathComponent("scans.store")
+        let scan = ScanPersistenceFixtures.scan()
+        try writeLegacyV1(scan, url: url)
+
+        let repository = SwiftDataCompletedScanRepository(storeURL: url)
+        let restored = try await repository.fetch(id: scan.id)
+        XCTAssertEqual(restored, scan)
+        XCTAssertNil(restored?.findings.first?.passageEvidence)
+    }
+
+    private func writeLegacyV1(_ scan: CompletedScan, url: URL) throws {
+        let schema = Schema(versionedSchema: ScanStorageSchemaV1.self)
+        let configuration = ModelConfiguration(schema: schema, url: url, cloudKitDatabase: .none)
+        let container = try ModelContainer(for: schema, configurations: [configuration])
+        let context = ModelContext(container)
+        let findings = scan.findings.enumerated().map {
+            ScanStorageSchemaV1.StoredFinding($0.element, position: $0.offset)
+        }
+        context.insert(ScanStorageSchemaV1.StoredScan(
+            id: scan.id, startedAt: scan.startedAt, completedAt: scan.completedAt,
+            limitations: scan.limitationsSummary, findings: findings
+        ))
         try context.save()
     }
 }

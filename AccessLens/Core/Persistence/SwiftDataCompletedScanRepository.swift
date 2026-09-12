@@ -20,7 +20,7 @@ actor SwiftDataCompletedScanRepository: CompletedScanRepository {
     private func storage() throws -> ModelContext {
         if let context { return context }
         do {
-            let schema = Schema(versionedSchema: ScanStorageSchemaV1.self)
+            let schema = Schema(versionedSchema: ScanStorageSchemaV2.self)
             let configuration: ModelConfiguration
             if inMemory {
                 configuration = ModelConfiguration(schema: schema, isStoredInMemoryOnly: true, cloudKitDatabase: .none)
@@ -91,7 +91,7 @@ actor SwiftDataCompletedScanRepository: CompletedScanRepository {
     func fetchAll() throws -> [SavedScanSummary] {
         let context = try storage()
         do {
-            let records = try context.fetch(FetchDescriptor<ScanStorageSchemaV1.StoredScan>())
+            let records = try context.fetch(FetchDescriptor<ScanStorageSchemaV2.StoredScan>())
             return records.map {
                 SavedScanSummary(id: $0.id, completedAt: $0.completedAt, findingCount: max(0, $0.findingCount))
             }.sorted(by: SavedScanSummary.newestFirst)
@@ -115,8 +115,8 @@ actor SwiftDataCompletedScanRepository: CompletedScanRepository {
         }
     }
 
-    private func record(id: UUID, context: ModelContext) throws -> ScanStorageSchemaV1.StoredScan? {
-        var descriptor = FetchDescriptor<ScanStorageSchemaV1.StoredScan>(predicate: #Predicate { $0.id == id })
+    private func record(id: UUID, context: ModelContext) throws -> ScanStorageSchemaV2.StoredScan? {
+        var descriptor = FetchDescriptor<ScanStorageSchemaV2.StoredScan>(predicate: #Predicate { $0.id == id })
         descriptor.fetchLimit = 1
         return try context.fetch(descriptor).first
     }

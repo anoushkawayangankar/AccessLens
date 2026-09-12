@@ -108,6 +108,11 @@ struct ScanReviewView: View {
                 Text(text)
                     .font(.body.weight(.semibold))
             }
+            if let width = finding.passageEvidence?.estimatedWidth {
+                Text("Estimated opening width: \(width.measurement.formatted(.measurement(width: .abbreviated, usage: .asProvided)))")
+                    .font(.body.weight(.semibold))
+                    .accessibilityIdentifier("passage-estimated-width")
+            }
             Text(finding.explanation)
                 .font(.body)
             Text(finding.evidenceStrength.guidanceLabel)

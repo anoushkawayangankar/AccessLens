@@ -20,6 +20,7 @@ nonisolated struct AccessibilityFinding: Identifiable, Equatable, Sendable, Hash
     let lifecycleState: FindingLifecycleState
     let relevantText: String?
     let estimatedContrastRatio: ContrastRatio?
+    let passageEvidence: PassageFindingEvidence?
 
     init(
         id: UUID = UUID(),
@@ -37,7 +38,8 @@ nonisolated struct AccessibilityFinding: Identifiable, Equatable, Sendable, Hash
         sourceAnalyzerIDs: [AnalyzerIdentifier],
         lifecycleState: FindingLifecycleState = .active,
         relevantText: String?,
-        estimatedContrastRatio: ContrastRatio?
+        estimatedContrastRatio: ContrastRatio?,
+        passageEvidence: PassageFindingEvidence? = nil
     ) {
         self.id = id
         self.category = category
@@ -55,12 +57,14 @@ nonisolated struct AccessibilityFinding: Identifiable, Equatable, Sendable, Hash
         self.lifecycleState = lifecycleState
         self.relevantText = relevantText
         self.estimatedContrastRatio = estimatedContrastRatio
+        self.passageEvidence = passageEvidence
     }
 }
 
 /// Only categories backed by currently implemented analyzers belong here.
 nonisolated enum AccessibilityFindingCategory: String, CaseIterable, Equatable, Sendable, Hashable {
     case potentialLowContrastText = "potentialLowContrastText"
+    case potentialNarrowPassage = "potentialNarrowPassage"
 }
 
 /// Evidence strength communicates repeatability and usable evidence, not a

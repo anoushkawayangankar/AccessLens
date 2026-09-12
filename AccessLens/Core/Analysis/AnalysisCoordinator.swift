@@ -134,6 +134,28 @@ nonisolated final class AnalysisCoordinator: CameraFrameConsumer, @unchecked Sen
         )
     }
 
+    /// RoomPlan owns the camera on LiDAR-capable devices. Its classified
+    /// surface snapshot and current captured image enter the same bounded
+    /// scheduler used by OCR and contrast; no second capture session runs.
+    func roomPlanDidOutput(
+        imageBuffer: CVPixelBuffer,
+        presentationTimeSeconds: TimeInterval,
+        orientation: AnalysisImageOrientation,
+        passageSurfaces: [PassageSurfaceEvidence]
+    ) {
+        guard let sessionID = sessionGate.activeSessionID else { return }
+        scheduler.submit(
+            sessionID: sessionID,
+            presentationTimeSeconds: presentationTimeSeconds,
+            orientation: orientation,
+            dimensions: AnalysisFrameDimensions(
+                width: CVPixelBufferGetWidth(imageBuffer),
+                height: CVPixelBufferGetHeight(imageBuffer)
+            ),
+            payload: AnalysisFramePayload(imageBuffer: imageBuffer, passageSurfaces: passageSurfaces)
+        )
+    }
+
     private func dimensions(from sampleBuffer: CMSampleBuffer) -> AnalysisFrameDimensions? {
         guard let imageBuffer = CMSampleBufferGetImageBuffer(sampleBuffer) else { return nil }
         return AnalysisFrameDimensions(

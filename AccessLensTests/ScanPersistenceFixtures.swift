@@ -22,4 +22,43 @@ enum ScanPersistenceFixtures {
         return CompletedScan(sessionID: id, startedAt: Date(timeIntervalSince1970: completedAt - 30),
                              completedAt: Date(timeIntervalSince1970: completedAt), findings: findings)
     }
+
+    static func passageFinding(
+        id: UUID = UUID(),
+        sessionID: AnalysisSessionID = AnalysisSessionID(),
+        widthMeters: Double = 0.84
+    ) -> AccessibilityFinding {
+        AccessibilityFinding(
+            id: id,
+            category: .potentialNarrowPassage,
+            title: "Potential narrow passage",
+            explanation: "The visible clear opening may offer limited usable space.",
+            evidenceSummary: "A similar opening was observed across three analyses with a median estimated width of 0.84 meters.",
+            evidenceStrength: .moderate,
+            region: NormalizedRegion(x: 0.2, y: 0.1, width: 0.4, height: 0.8),
+            firstObservedTime: 1,
+            lastObservedTime: 3,
+            supportingFrameRange: FindingFrameRange(first: .init(rawValue: 1), last: .init(rawValue: 3)),
+            supportingObservationCount: 3,
+            sessionID: sessionID,
+            sourceAnalyzerIDs: [.init(rawValue: "roomplan.passage.v1")],
+            relevantText: nil,
+            estimatedContrastRatio: nil,
+            passageEvidence: PassageFindingEvidence(
+                estimatedWidth: PassageWidth(meters: widthMeters),
+                measurementMethod: .roomPlanLiDAR,
+                measurementQuality: .usable
+            )
+        )
+    }
+
+    static func passageScan(id: UUID = UUID()) -> CompletedScan {
+        let sessionID = AnalysisSessionID(rawValue: id)
+        return CompletedScan(
+            sessionID: id,
+            startedAt: Date(timeIntervalSince1970: 300),
+            completedAt: Date(timeIntervalSince1970: 330),
+            findings: [passageFinding(sessionID: sessionID)]
+        )
+    }
 }

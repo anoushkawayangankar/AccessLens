@@ -4,6 +4,7 @@ import UIKit
 struct ScanView: View {
     @StateObject private var viewModel: ScanViewModel
     @ObservedObject private var sessionController: CameraSessionController
+    @ObservedObject private var passageCaptureController: RoomPlanPassageCaptureController
     @Environment(\.scenePhase) private var scenePhase
     @State private var isShowingDiscardConfirmation = false
 
@@ -13,6 +14,7 @@ struct ScanView: View {
     init(
         authorizationService: any CameraAuthorizationProviding,
         sessionController: CameraSessionController,
+        passageCaptureController: RoomPlanPassageCaptureController? = nil,
         analysisCoordinator: AnalysisCoordinator,
         initialFindings: [AccessibilityFinding] = [],
         initialFindingsProvider: (() -> [AccessibilityFinding])? = nil,
@@ -20,10 +22,15 @@ struct ScanView: View {
         onCompleted: @escaping (CompletedScan) -> Void = { _ in },
         onDiscard: @escaping () -> Void = {}
     ) {
+        let passageController = passageCaptureController ?? RoomPlanPassageCaptureController(
+            roomPlanSupported: false,
+            frameHandler: { _, _, _, _ in }
+        )
         _viewModel = StateObject(
             wrappedValue: ScanViewModel(
                 authorizationService: authorizationService,
                 sessionController: sessionController,
+                passageCaptureController: passageController,
                 analysisCoordinator: analysisCoordinator,
                 initialFindings: initialFindings,
                 initialFindingsProvider: initialFindingsProvider,
@@ -31,6 +38,7 @@ struct ScanView: View {
             )
         )
         _sessionController = ObservedObject(wrappedValue: sessionController)
+        _passageCaptureController = ObservedObject(wrappedValue: passageController)
         self.onCompleted = onCompleted
         self.onDiscard = onDiscard
     }
@@ -120,7 +128,17 @@ struct ScanView: View {
 
     @ViewBuilder
     private var preview: some View {
-        if shouldShowPreview {
+        if viewModel.usesPassageCapture,
+           viewModel.authorization == .authorized,
+           let captureView = passageCaptureController.captureView {
+            RoomPlanCapturePreview(captureView: captureView) { size, orientation in
+                passageCaptureController.updateViewport(size: size, orientation: orientation)
+            }
+                .frame(minHeight: 260)
+                .frame(maxWidth: .infinity)
+                .clipShape(RoundedRectangle(cornerRadius: AppCornerRadius.card, style: .continuous))
+                .accessibilityHidden(true)
+        } else if shouldShowPreview {
             CameraPreview(session: sessionController.session)
                 .frame(minHeight: 260)
                 .frame(maxWidth: .infinity)
@@ -197,6 +215,15 @@ struct ScanView: View {
 
     @ViewBuilder
     private var cameraRuntimeStatus: some View {
+        if viewModel.usesPassageCapture {
+            passageRuntimeStatus
+        } else {
+            standardCameraRuntimeStatus
+        }
+    }
+
+    @ViewBuilder
+    private var standardCameraRuntimeStatus: some View {
         switch sessionController.state {
         case .idle, .configuring, .ready:
             statusContainer(
@@ -226,9 +253,33 @@ struct ScanView: View {
         }
     }
 
+    @ViewBuilder
+    private var passageRuntimeStatus: some View {
+        switch passageCaptureController.state {
+        case .running:
+            statusContainer(
+                title: viewModel.isAnalyzingEnvironment ? "Analyzing environment" : "Camera ready",
+                message: passageCaptureController.captureGuidance
+                    ?? "AccessLens is using on-device LiDAR room geometry to look for passage evidence. Any width is estimated and must be verified directly.",
+                symbolName: "door.left.hand.open"
+            )
+        case .ready:
+            statusContainer(title: "Preparing camera", message: "AccessLens is preparing LiDAR passage analysis.", symbolName: "camera")
+        case .limited:
+            statusContainer(
+                title: "Passage measurement limited",
+                message: passageCaptureController.captureGuidance
+                    ?? "Passage measurement is unavailable. Other supported analysis can continue.",
+                symbolName: "exclamationmark.triangle"
+            )
+        case .unavailable:
+            standardCameraRuntimeStatus
+        }
+    }
+
     private var analysisSummary: String {
         if viewModel.isAnalyzingEnvironment {
-            return "AccessLens analyzes visible text and environmental signage on this device. Potential findings require repeated usable evidence and should be verified in person."
+            return "AccessLens analyzes visible text, environmental signage, and supported passage evidence on this device. Potential findings require repeated usable evidence and should be verified in person."
         }
         return "Camera analysis starts when camera input is available. AccessLens does not certify accessibility or legal compliance."
     }
@@ -277,6 +328,10 @@ struct ScanView: View {
                 .font(.subheadline)
             if let ratio = finding.estimatedContrastRatio {
                 Text("Estimated text/background contrast: \(ratio.value, format: .number.precision(.fractionLength(1))):1")
+                    .font(.subheadline)
+            }
+            if let width = finding.passageEvidence?.estimatedWidth {
+                Text("Estimated opening width: \(width.measurement.formatted(.measurement(width: .abbreviated, usage: .asProvided)))")
                     .font(.subheadline)
             }
             Text("Estimated from camera observations. Review the environment directly before acting on this result.")

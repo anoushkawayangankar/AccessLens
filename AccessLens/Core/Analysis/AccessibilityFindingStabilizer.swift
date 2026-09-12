@@ -14,6 +14,7 @@ nonisolated struct FindingStabilizationPolicy: Equatable, Sendable {
     let minimumRegionIntersectionOverUnion: Double
     let requiredSupportingObservations: Int
     let strongEvidenceSupportingObservations: Int
+    let passageMeasurementOutlierTolerance: Double
 
     init(
         maximumCandidateTracks: Int = 12,
@@ -23,7 +24,8 @@ nonisolated struct FindingStabilizationPolicy: Equatable, Sendable {
         expiryInterval: TimeInterval = 6,
         minimumRegionIntersectionOverUnion: Double = 0.5,
         requiredSupportingObservations: Int = 3,
-        strongEvidenceSupportingObservations: Int = 5
+        strongEvidenceSupportingObservations: Int = 5,
+        passageMeasurementOutlierTolerance: Double = 0.25
     ) {
         self.maximumCandidateTracks = maximumCandidateTracks
         self.maximumEvidenceEntriesPerTrack = maximumEvidenceEntriesPerTrack
@@ -33,6 +35,7 @@ nonisolated struct FindingStabilizationPolicy: Equatable, Sendable {
         self.minimumRegionIntersectionOverUnion = minimumRegionIntersectionOverUnion
         self.requiredSupportingObservations = requiredSupportingObservations
         self.strongEvidenceSupportingObservations = strongEvidenceSupportingObservations
+        self.passageMeasurementOutlierTolerance = passageMeasurementOutlierTolerance
     }
 }
 
@@ -60,10 +63,31 @@ nonisolated final class AccessibilityFindingStabilizer: @unchecked Sendable {
         var findingID: UUID?
     }
 
+    private struct PassageEvidence: Sendable {
+        let frameSequence: AnalysisFrameSequence
+        let timestamp: TimeInterval
+        let width: PassageWidth
+        let method: PassageMeasurementMethod
+        let quality: PassageMeasurementQuality
+        let sourceAnalyzerIDs: [AnalyzerIdentifier]
+    }
+
+    private struct PassageTrack: Sendable {
+        let id: UUID
+        let sessionID: AnalysisSessionID
+        let surfaceID: UUID
+        var region: NormalizedRegion?
+        var firstObservedTime: TimeInterval
+        var lastObservedTime: TimeInterval
+        var evidence: [PassageEvidence]
+        var findingID: UUID?
+    }
+
     private let policy: FindingStabilizationPolicy
     private let lock = NSLock()
     private var activeSessionID: AnalysisSessionID?
     private var tracks: [Track] = []
+    private var passageTracks: [PassageTrack] = []
     private var activeFindings: [AccessibilityFinding] = []
 
     init(policy: FindingStabilizationPolicy = FindingStabilizationPolicy()) {
@@ -75,6 +99,7 @@ nonisolated final class AccessibilityFindingStabilizer: @unchecked Sendable {
         defer { lock.unlock() }
         activeSessionID = sessionID
         tracks.removeAll()
+        passageTracks.removeAll()
         activeFindings.removeAll()
     }
 
@@ -84,6 +109,7 @@ nonisolated final class AccessibilityFindingStabilizer: @unchecked Sendable {
         guard activeSessionID == sessionID else { return }
         activeSessionID = nil
         tracks.removeAll()
+        passageTracks.removeAll()
         activeFindings.removeAll()
     }
 
@@ -105,6 +131,29 @@ nonisolated final class AccessibilityFindingStabilizer: @unchecked Sendable {
 
         var newlyPromotedFindingIDs: Set<UUID> = []
         for candidate in candidates where candidate.sessionID == sessionID {
+            if let passageInput = qualifyingPassageInput(from: candidate) {
+                let evidence = PassageEvidence(
+                    frameSequence: candidate.frameSequence,
+                    timestamp: evidenceTime(for: candidate),
+                    width: passageInput.width,
+                    method: passageInput.evidence.measurementMethod,
+                    quality: passageInput.evidence.measurementQuality,
+                    sourceAnalyzerIDs: candidate.sourceAnalyzerIDs
+                )
+                if let index = passageTracks.firstIndex(where: { associates($0, with: candidate, input: passageInput) }) {
+                    append(evidence, candidate: candidate, toPassageTrackAt: index)
+                    if let findingID = promoteOrUpdate(passageTrackAt: index) {
+                        newlyPromotedFindingIDs.insert(findingID)
+                    }
+                } else {
+                    addPassageTrack(candidate: candidate, input: passageInput, evidence: evidence)
+                    if let findingID = promoteOrUpdate(passageTrackAt: passageTracks.index(before: passageTracks.endIndex)) {
+                        newlyPromotedFindingIDs.insert(findingID)
+                    }
+                }
+                continue
+            }
+
             guard let input = qualifyingInput(from: candidate) else { continue }
             let evidence = Evidence(
                 frameSequence: candidate.frameSequence,
@@ -144,13 +193,20 @@ nonisolated final class AccessibilityFindingStabilizer: @unchecked Sendable {
         let expiredTrackIDs = Set(tracks.compactMap { track in
             currentTime - track.lastObservedTime > policy.expiryInterval ? track.id : nil
         })
-        guard !expiredTrackIDs.isEmpty else { return activeFindings }
+        let expiredPassageTrackIDs = Set(passageTracks.compactMap { track in
+            currentTime - track.lastObservedTime > policy.expiryInterval ? track.id : nil
+        })
+        guard !expiredTrackIDs.isEmpty || !expiredPassageTrackIDs.isEmpty else { return activeFindings }
 
         let expiredFindingIDs = Set(
             tracks.compactMap { expiredTrackIDs.contains($0.id) ? $0.findingID : nil }
         )
+        let expiredPassageFindingIDs = Set(
+            passageTracks.compactMap { expiredPassageTrackIDs.contains($0.id) ? $0.findingID : nil }
+        )
         tracks.removeAll { expiredTrackIDs.contains($0.id) }
-        activeFindings.removeAll { expiredFindingIDs.contains($0.id) }
+        passageTracks.removeAll { expiredPassageTrackIDs.contains($0.id) }
+        activeFindings.removeAll { expiredFindingIDs.contains($0.id) || expiredPassageFindingIDs.contains($0.id) }
         AppLog.analysis.debug("Expired stale accessibility findings")
         return activeFindings
     }
@@ -166,8 +222,11 @@ nonisolated final class AccessibilityFindingStabilizer: @unchecked Sendable {
         defer { lock.unlock() }
         return FindingStabilizerSnapshot(
             activeSessionID: activeSessionID,
-            candidateTrackCount: tracks.count,
-            maximumEvidenceEntriesInTrack: tracks.map(\.evidence.count).max() ?? 0,
+            candidateTrackCount: tracks.count + passageTracks.count,
+            maximumEvidenceEntriesInTrack: max(
+                tracks.map(\.evidence.count).max() ?? 0,
+                passageTracks.map(\.evidence.count).max() ?? 0
+            ),
             activeFindingCount: activeFindings.count
         )
     }
@@ -183,6 +242,18 @@ nonisolated final class AccessibilityFindingStabilizer: @unchecked Sendable {
             return nil
         }
         return (text, normalizedText, region, ratio)
+    }
+
+    private func qualifyingPassageInput(
+        from candidate: FindingCandidate
+    ) -> (surfaceID: UUID, width: PassageWidth, evidence: PassageFindingEvidence)? {
+        guard candidate.category == .potentialNarrowPassage,
+              let surfaceID = candidate.passageSurfaceID,
+              let evidence = candidate.passageEvidence,
+              evidence.measurementMethod == .roomPlanLiDAR,
+              evidence.measurementQuality == .usable,
+              let width = evidence.estimatedWidth else { return nil }
+        return (surfaceID, width, evidence)
     }
 
     private func associates(
@@ -219,12 +290,52 @@ nonisolated final class AccessibilityFindingStabilizer: @unchecked Sendable {
         AppLog.analysis.debug("Created accessibility candidate track")
     }
 
+    private func associates(
+        _ track: PassageTrack,
+        with candidate: FindingCandidate,
+        input: (surfaceID: UUID, width: PassageWidth, evidence: PassageFindingEvidence)
+    ) -> Bool {
+        guard evidenceTime(for: candidate) - track.lastObservedTime <= policy.evidenceWindow else { return false }
+        if track.surfaceID == input.surfaceID { return true }
+        guard let trackRegion = track.region, let candidateRegion = candidate.region else { return false }
+        return NormalizedRegionAssociation.intersectionOverUnion(trackRegion, candidateRegion)
+            >= policy.minimumRegionIntersectionOverUnion
+    }
+
+    private func addPassageTrack(
+        candidate: FindingCandidate,
+        input: (surfaceID: UUID, width: PassageWidth, evidence: PassageFindingEvidence),
+        evidence: PassageEvidence
+    ) {
+        passageTracks.append(PassageTrack(
+            id: UUID(), sessionID: candidate.sessionID, surfaceID: input.surfaceID,
+            region: candidate.region, firstObservedTime: evidence.timestamp,
+            lastObservedTime: evidence.timestamp, evidence: [evidence], findingID: nil
+        ))
+        AppLog.analysis.debug("Created passage candidate track")
+    }
+
     private func append(_ evidence: Evidence, candidate: FindingCandidate, toTrackAt index: Int) {
         tracks[index].region = candidate.region ?? tracks[index].region
         tracks[index].lastObservedTime = evidence.timestamp
         tracks[index].evidence.append(evidence)
         if tracks[index].evidence.count > policy.maximumEvidenceEntriesPerTrack {
             tracks[index].evidence.removeFirst(tracks[index].evidence.count - policy.maximumEvidenceEntriesPerTrack)
+        }
+    }
+
+    private func append(
+        _ evidence: PassageEvidence,
+        candidate: FindingCandidate,
+        toPassageTrackAt index: Int
+    ) {
+        passageTracks[index].region = candidate.region ?? passageTracks[index].region
+        passageTracks[index].lastObservedTime = evidence.timestamp
+        passageTracks[index].evidence.append(evidence)
+        if passageTracks[index].evidence.count > policy.maximumEvidenceEntriesPerTrack {
+            passageTracks[index].evidence.removeFirst(
+                passageTracks[index].evidence.count - policy.maximumEvidenceEntriesPerTrack
+            )
         }
     }
 
@@ -280,17 +391,85 @@ nonisolated final class AccessibilityFindingStabilizer: @unchecked Sendable {
             sessionID: track.sessionID,
             sourceAnalyzerIDs: sources,
             relevantText: track.displayText,
-            estimatedContrastRatio: latestRatio
+            estimatedContrastRatio: latestRatio,
+            passageEvidence: nil
+        )
+    }
+
+    private func promoteOrUpdate(passageTrackAt index: Int) -> UUID? {
+        let track = passageTracks[index]
+        let widths = track.evidence.map(\.width)
+        let inliers = PassageMeasurementAggregator.inliers(
+            widths,
+            relativeTolerance: policy.passageMeasurementOutlierTolerance
+        )
+        guard let first = track.evidence.first,
+              let last = track.evidence.last,
+              inliers.count >= policy.requiredSupportingObservations,
+              last.timestamp - first.timestamp <= policy.evidenceWindow,
+              let medianWidth = PassageMeasurementAggregator.medianRejectingOutliers(
+                inliers,
+                relativeTolerance: policy.passageMeasurementOutlierTolerance
+              ) else { return nil }
+
+        let finding = makePassageFinding(from: track, inlierCount: inliers.count, width: medianWidth)
+        if let findingID = track.findingID,
+           let findingIndex = activeFindings.firstIndex(where: { $0.id == findingID }) {
+            activeFindings[findingIndex] = finding
+            AppLog.analysis.debug("Updated stable passage finding")
+            return nil
+        }
+        passageTracks[index].findingID = finding.id
+        activeFindings.append(finding)
+        AppLog.analysis.info("Promoted passage finding")
+        return finding.id
+    }
+
+    private func makePassageFinding(
+        from track: PassageTrack,
+        inlierCount: Int,
+        width: PassageWidth
+    ) -> AccessibilityFinding {
+        let sources = Array(Set(track.evidence.flatMap(\.sourceAnalyzerIDs)))
+            .sorted { $0.rawValue < $1.rawValue }
+        let strength: FindingEvidenceStrength = inlierCount >= policy.strongEvidenceSupportingObservations
+            ? .strong : .moderate
+        let centimeters = Int((width.meters * 100).rounded())
+        return AccessibilityFinding(
+            id: track.findingID ?? UUID(), category: .potentialNarrowPassage,
+            title: "Potential narrow passage",
+            explanation: "The visible opening was repeatedly estimated as relatively narrow. Verify the clear opening directly before making accessibility decisions.",
+            evidenceSummary: "A LiDAR-supported room scan repeatedly identified a similar door or opening. The median estimated opening width was about \(centimeters) centimeters after rejecting inconsistent measurements.",
+            evidenceStrength: strength, region: track.region,
+            firstObservedTime: track.firstObservedTime, lastObservedTime: track.lastObservedTime,
+            supportingFrameRange: FindingFrameRange(
+                first: track.evidence.first?.frameSequence ?? AnalysisFrameSequence(rawValue: 0),
+                last: track.evidence.last?.frameSequence ?? AnalysisFrameSequence(rawValue: 0)
+            ),
+            supportingObservationCount: inlierCount, sessionID: track.sessionID,
+            sourceAnalyzerIDs: sources, relevantText: nil, estimatedContrastRatio: nil,
+            passageEvidence: PassageFindingEvidence(
+                estimatedWidth: width, measurementMethod: .roomPlanLiDAR, measurementQuality: .usable
+            )
         )
     }
 
     private func enforceBounds() {
-        if tracks.count > policy.maximumCandidateTracks {
-            let excess = tracks.count - policy.maximumCandidateTracks
-            let evicted = tracks.prefix(excess)
-            let findingIDs = Set(evicted.compactMap(\.findingID))
-            tracks.removeFirst(excess)
-            activeFindings.removeAll { findingIDs.contains($0.id) }
+        let totalTracks = tracks.count + passageTracks.count
+        if totalTracks > policy.maximumCandidateTracks {
+            var excess = totalTracks - policy.maximumCandidateTracks
+            while excess > 0 {
+                let contrastTime = tracks.first?.lastObservedTime ?? .infinity
+                let passageTime = passageTracks.first?.lastObservedTime ?? .infinity
+                if contrastTime <= passageTime, let removed = tracks.first {
+                    tracks.removeFirst()
+                    if let id = removed.findingID { activeFindings.removeAll { $0.id == id } }
+                } else if let removed = passageTracks.first {
+                    passageTracks.removeFirst()
+                    if let id = removed.findingID { activeFindings.removeAll { $0.id == id } }
+                }
+                excess -= 1
+            }
         }
         if activeFindings.count > policy.maximumActiveFindings {
             let excess = activeFindings.count - policy.maximumActiveFindings
@@ -298,6 +477,9 @@ nonisolated final class AccessibilityFindingStabilizer: @unchecked Sendable {
             activeFindings.removeFirst(excess)
             for index in tracks.indices where tracks[index].findingID.map(removedIDs.contains) ?? false {
                 tracks[index].findingID = nil
+            }
+            for index in passageTracks.indices where passageTracks[index].findingID.map(removedIDs.contains) ?? false {
+                passageTracks[index].findingID = nil
             }
         }
     }
@@ -308,7 +490,7 @@ nonisolated final class AccessibilityFindingStabilizer: @unchecked Sendable {
         switch candidate.category {
         case .potentialLowContrastText:
             .potentialLowContrastText
-        case .unclassified, .environmentalSignage:
+        case .unclassified, .environmentalSignage, .potentialNarrowPassage:
             .potentialLowContrastText
         }
     }

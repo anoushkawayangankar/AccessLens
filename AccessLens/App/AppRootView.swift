@@ -52,6 +52,7 @@ struct AppRootView: View {
             ScanView(
                 authorizationService: dependencies.cameraAuthorizationService,
                 sessionController: dependencies.cameraSessionController,
+                passageCaptureController: dependencies.passageCaptureController,
                 analysisCoordinator: dependencies.analysisCoordinator,
                 initialFindingsProvider: dependencies.nextScanFindingOverride,
                 forceAnalysisPresentation: dependencies.scanAnalysisPresentationOverride,

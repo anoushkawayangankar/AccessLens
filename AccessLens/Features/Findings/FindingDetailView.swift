@@ -40,6 +40,12 @@ struct FindingDetailView: View {
                     if let ratio = guidance.observation.estimatedContrastRatio {
                         Text("Estimated text/background contrast: \(ratio.value, format: .number.precision(.fractionLength(1))):1")
                     }
+                    if let passage = guidance.observation.passageEvidence,
+                       let width = passage.estimatedWidth {
+                        Text("Estimated opening width: \(width.measurement.formatted(.measurement(width: .abbreviated, usage: .asProvided)))")
+                        Text("Measurement method: RoomPlan with LiDAR")
+                        Text("Measurement quality: \(passage.measurementQuality.displayName)")
+                    }
                     Text("Estimated from camera observations.")
                     Text(guidance.verificationNote)
                 }

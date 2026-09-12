@@ -1,6 +1,6 @@
 # AccessLens — Production Architecture
 
-**Scope:** Production contract with implementation refinements through Milestone 10. Sections labeled with prior milestones record their scope at that time; the Milestone 9 persistence section supersedes the former in-memory-only completed-review lifetime. Export and reporting remain future work.
+**Scope:** Production contract with implementation refinements through Milestone 11. Sections labeled with prior milestones record their scope at that time; the Milestone 9 persistence section supersedes the former in-memory-only completed-review lifetime. Export and reporting remain future work.
 
 ## Architectural shape
 
@@ -12,6 +12,8 @@ Camera frame → bounded scheduler → Vision requests → normalized observatio
 → stabilizer → live stable findings → Finish Scan → immutable completed snapshot
 → local repository save → Scan Review / Scan History → historical Scan Review
 ```
+
+On a RoomPlan-supported LiDAR iPhone, the Scan camera owner changes—not duplicates—to `RoomCaptureSession`: captured image + reconstructed door/opening surfaces → the same bounded scheduler → OCR/contrast/passage analyzers. Other devices retain the existing AVFoundation path and never infer metric scale from pixels alone.
 
 ## Domain model contract
 
@@ -167,6 +169,8 @@ SwiftData is the production local store for the existing iOS 17+ target. `Comple
 
 `ScanStorageSchemaV1` is a `VersionedSchema` (1.0.0) with `StoredScan` and dependent `StoredFinding` entities. Scan UUID is unique. The scan holds Date timestamps, record version, finding count, limitations, and a cascade-delete relationship. Each finding retains its stable ID and explicit position, category/title/explanation, evidence summary and strength, relevant finalized signage text, estimated ratio, normalized region if present, analysis provenance ID, bounded support count/time/sequence range, lifecycle meaning, and source analyzer identifiers. Supporting sequence endpoints are scalar provenance, not frames or a per-frame history. String identifiers preserve the full UInt64 range. Explicit string enum raw values are stable; no enum integer ordering is stored.
 
+This paragraph records the original v1 contract. Milestone 11 freezes it and adds the compatible v2 passage fields described below.
+
 `ScanStorageMapper` validates finite dates/numbers, date/sequence order, complete normalized regions, unique finding IDs, relationship positions/counts, ratio range, and bounded strings/finding/source counts. It reconstructs the exact domain evidence without recomputing contrast. Unknown record versions/categories/strengths/lifecycle values produce typed unsupported-record errors and are never guessed or silently omitted. Invalid or unsupported records remain logically quarantined in place: history metadata is still listed, opening shows a safe recoverable error, and the user can explicitly delete that record. A future schema change must preserve v1, add a new `VersionedSchema` and tested `SchemaMigrationPlan` stage, and verify old-store migration/rollback behavior. The v1 plan has no artificial migration stages.
 
 Completed snapshots are immutable. Saving an identical scan ID/value is an idempotent no-op; saving different evidence under that same ID fails as a conflict and preserves the first record. Save and delete use explicit `ModelContext.save()` with rollback on failure. Deleting an absent ID is a no-op; deleting an existing scan cascades only to its own finding records. There are no image assets to delete. Disk-backed recreation and cascade-delete integration tests verify persistence beyond actor/context lifetime.
@@ -194,6 +198,34 @@ Observation, interpretation, and advice are separate fields and sections. Detail
 Concise review cards link through the existing `AppRoute.findingDetail(AccessibilityFinding)` to one `FindingDetailView`. The route owns a compact immutable finding value, not camera resources or a repository. `AppNavigator` remains the sole navigation owner. Back removes only the detail route, returning to the same live-completion or historical scan review. Opening details cannot save again, restart analysis, or alter the snapshot. Two findings have distinct route values and detail identity. Zero-finding reviews have no guidance control.
 
 The detail hierarchy is title → observed evidence → possible impact → direct checks → possible improvements → evidence strength/estimate → limitations. It uses semantic headings, primary text on system background, wrapping system fonts, a scroll layout, contextual View Guidance labels, numbered actions with spoken item/count context, and an explicit 44-point Back control. No automatic announcements are added. Native navigation supplies focus context; `accessibilityReduceMotion` disables app navigation transaction animation when requested. Manual VoiceOver/focus, Voice Control, maximum text size, small-screen/landscape, Light/Dark, Differentiate Without Color, and Reduce Motion checks remain release gates.
+
+## LiDAR passage evidence (Milestone 11)
+
+### Feasibility and capability tiers
+
+Apple's generic Vision rectangle APIs provide projected shapes, not semantic door identity or metric scale. Camera intrinsics describe projection but do not supply real-world scale for an uncalibrated monocular frame. AccessLens therefore does not use either mechanism to invent a doorway width. The production metric path uses RoomPlan only when `RoomCaptureSession.isSupported` confirms a LiDAR-capable device. RoomPlan supplies semantically classified `doors` and `openings`, a metric surface width, transform and reconstruction confidence.
+
+- **Tier A — RoomPlan/LiDAR:** supported. `RoomCaptureSession` supplies the camera frame and room surfaces. High-confidence surfaces may contribute usable metric evidence; medium confidence is retained only as approximate observation and cannot create a finding; low confidence has no numeric presentation.
+- **Tier B — camera intrinsics without scale:** passage measurement is unsupported. The existing AVFoundation camera, OCR and contrast pipeline continues; intrinsics are not converted to physical units.
+- **Tier C — no relevant geometry:** passage analysis is quietly unavailable and other analyzers continue.
+
+No ARKit session runs beside AVCaptureSession. On Tier A, `RoomPlanPassageCaptureController` owns a `RoomCaptureView`/RoomPlan capture session and `ScanViewModel` makes the existing AVCapture controller non-visible before starting it. On Tier B/C the RoomPlan controller never runs. Camera authorization, foreground/background, Scan visibility, Finish, discard and teardown drive both controllers idempotently. RoomPlan's internal ARSession is used only through its capture session; AccessLens does not configure a second independent ARKit capture system.
+
+### Boundary, scheduling, and evidence
+
+`RoomPlanPassageDeliveryBridge` immediately converts a bounded maximum of eight current RoomPlan door/opening surfaces into framework-independent `PassageSurfaceEvidence`. It projects each surface's metric rectangle into AccessLens's top-left normalized image coordinates using `ARCamera.projectPoint`. It passes the current captured image, timestamp, orientation and compact surface snapshot to `AnalysisCoordinator`; RoomPlan, ARKit, transforms and depth objects terminate at this boundary. The scheduler still allows exactly one in-flight pass and one latest pending frame, with normal 0.75-second cadence, reduced 1.5-second thermal/Low Power cadence and critical suspension. The payload retains at most the bounded current/pending pixel buffers and surface values. Neither depth nor geometry history is retained.
+
+`PassageAccessibilityAnalyzer` is the third analyzer in the existing ordered pass. It produces `PassageObservation` values and creates `.potentialNarrowPassage` candidates only from usable RoomPlan/LiDAR width evidence below the centralized 0.90-metre product screening heuristic. The heuristic is deliberately separated from metric extraction and is not a code, ADA, or compliance threshold. Approximate, insufficient and unavailable measurements never create that candidate. No obstruction category is implemented: RoomPlan surface reconstruction alone does not defensibly prove that a visible object blocks the usable opening, and this milestone adds no segmentation/custom model.
+
+Widths use `PassageWidth`, canonically metres with Foundation `Measurement<UnitLength>` for locale-aware display. Every value records `.roomPlanLiDAR` or `.unavailable` provenance and `unavailable` / `insufficient` / `approximate` / `usable` quality. The stabilizer remains the one evidence-fusion owner. Passage tracks associate by stable RoomPlan surface ID or region IoU within the existing five-second window; each track retains at most six observations. Three consistent usable widths are required, a 25% relative window rejects outliers, and their median becomes the finding estimate. Existing global limits remain 12 combined tracks and six findings. Session replacement, cancellation, expiry and scan completion clear the same bounded state.
+
+The only new finding category is `potentialNarrowPassage`. It says the RoomPlan opening surface was repeatedly estimated as relatively narrow and requires direct physical verification. RoomPlan's surface width is not represented as a verified usable clear width. Evidence retains only the median width, method, quality, normalized region and existing provenance—not images, depth maps, meshes or per-frame geometry. Live and completed review label the value “Estimated opening width.” Deterministic current-rule guidance asks the reviewer to physically measure the narrowest clear opening, check projected/temporary objects, and recapture squarely if desired. It explicitly describes RoomPlan/LiDAR and camera/reconstruction limitations and never issues a legal verdict.
+
+### Persistence and compatibility
+
+SwiftData schema v2 adds three optional finalized-finding fields: canonical passage width in metres, stable measurement-method raw value and stable measurement-quality raw value. The frozen v1 schema remains unchanged and a lightweight v1→v2 migration is declared. Nil defaults preserve every Milestone 9/10 low-contrast record without fabricated passage evidence; both record envelope versions 1 and 2 map through strict validation. New passage records require a valid width, `.roomPlanLiDAR` and `.usable`; partial or inconsistent data is rejected. Guidance remains Option B: persisted evidence is rendered through current deterministic rules.
+
+There is no overlay in Milestone 11 because physical-device projection accuracy has not been validated. RoomPlan coaching instructions may provide truthful, transient capture prompts (move back/closer, slow down, add light, or difficult scene). They do not create findings. Physical LiDAR accuracy, projection/orientation, camera lifecycle, accessibility and performance remain **USER VALIDATION REQUIRED**.
 
 ## First-run onboarding preference
 
@@ -246,6 +278,7 @@ Milestone 0 and intended V1 introduce **no third-party dependencies**. Any later
 | SwiftUI | Accessible native presentation and navigation. |
 | AVFoundation | Camera authorization, session, device, and frame capture. |
 | Vision | On-device text recognition and supported normalized observations. |
+| RoomPlan / ARKit | LiDAR-capable semantic room surfaces, metric geometry and projection for conservative passage evidence; no independent AR camera session. |
 | Core Image / Core Graphics | Future bounded image-region measurement/processing when validated. |
 | SwiftData | Planned local scan/finding persistence behind repository. |
 | OSLog | Privacy-aware diagnostics and signposts. |
@@ -297,6 +330,7 @@ Organize by feature first and place reusable, platform-facing capabilities in `C
 | Completion save view model (`@MainActor`) | one immutable snapshot and retryable save status; does not own live analysis. |
 | History / historical review view models (`@MainActor`) | loading/error/delete state and domain summary/review values; no storage context. |
 | Guidance provider / finding detail | stateless current-rule derivation / immutable presentation; detail route belongs to AppNavigator and owns no services or camera state. |
+| RoomPlan passage capture controller | Tier-A camera/room capture lifecycle and immediate framework-to-value conversion; replaces AVCapture while active and retains no geometry history. |
 | Accessibility announcement coordinator (`@MainActor`) | coalescing/rate limit/deduplication of spoken announcements. |
 
 Transient live state includes frame/sample-buffer references, raw Vision observations, in-flight work, analysis generation, quality signals, temporary overlays, and live stabilization history. Milestone 9 persists only completed scan metadata and finalized finding evidence through the repository. The navigation route holds an in-memory domain copy; persistence is independently owned. Names, image retention, reports, and export remain future work. Raw frames, runtime queues, temporary overlays, candidates, and mutable live state are never persisted.
