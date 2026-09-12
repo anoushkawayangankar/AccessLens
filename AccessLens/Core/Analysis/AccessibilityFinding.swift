@@ -59,7 +59,7 @@ nonisolated struct AccessibilityFinding: Identifiable, Equatable, Sendable, Hash
 }
 
 /// Only categories backed by currently implemented analyzers belong here.
-nonisolated enum AccessibilityFindingCategory: String, Equatable, Sendable, Hashable {
+nonisolated enum AccessibilityFindingCategory: String, CaseIterable, Equatable, Sendable, Hashable {
     case potentialLowContrastText = "potentialLowContrastText"
 }
 

@@ -110,22 +110,22 @@ struct ScanReviewView: View {
             }
             Text(finding.explanation)
                 .font(.body)
-            Text(finding.evidenceSummary)
-                .font(.body)
-            Text("Evidence strength: \(finding.evidenceStrength.rawValue.capitalized)")
+            Text(finding.evidenceStrength.guidanceLabel)
                 .font(.subheadline)
-            if let ratio = finding.estimatedContrastRatio {
-                Text("Estimated text/background contrast: \(ratio.value, format: .number.precision(.fractionLength(1))):1")
-                    .font(.subheadline)
-            }
             Text("Potential issue estimated from camera observations.")
                 .font(.footnote)
-                .foregroundStyle(.secondary)
+            NavigationLink(value: AppRoute.findingDetail(finding)) {
+                Text("View Guidance")
+                    .frame(minHeight: AppLayout.minimumTouchTarget)
+            }
+            .buttonStyle(.bordered)
+            .accessibilityLabel(Text("View Guidance for \(finding.relevantText ?? finding.title)"))
+            .accessibilityIdentifier("view-guidance-\(finding.id.uuidString)")
         }
         .padding(AppSpacing.medium)
         .frame(maxWidth: .infinity, alignment: .leading)
         .background(.quaternary, in: RoundedRectangle(cornerRadius: AppCornerRadius.card, style: .continuous))
-        .accessibilityElement(children: .combine)
+        .accessibilityElement(children: .contain)
         .accessibilityIdentifier("scan-review-finding-\(finding.id.uuidString)")
     }
 

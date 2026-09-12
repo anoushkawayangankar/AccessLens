@@ -1,6 +1,6 @@
 # AccessLens — Production Architecture
 
-**Scope:** Production contract with implementation refinements through Milestone 9. Sections labeled with prior milestones record their scope at that time; the Milestone 9 persistence section supersedes the former in-memory-only completed-review lifetime. Export and reporting remain future work.
+**Scope:** Production contract with implementation refinements through Milestone 10. Sections labeled with prior milestones record their scope at that time; the Milestone 9 persistence section supersedes the former in-memory-only completed-review lifetime. Export and reporting remain future work.
 
 ## Architectural shape
 
@@ -181,6 +181,20 @@ The store is `Library/Application Support/AccessLens/CompletedScans.store` insid
 
 Testing uses isolated SwiftData stores (in-memory plus temporary on-disk recreation tests) and a DEBUG-only actor test repository with configured errors. Every UI test launches with a fresh deterministic history; no test seeds or resets the user's production store. No storage model/context is used in views. Manual VoiceOver, maximum Dynamic Type, Voice Control, Light/Dark, small-screen/landscape, device-lock, and OS backup/restore behavior remain release validation requirements.
 
+## Deterministic accessibility guidance (Milestone 10)
+
+`Core/Guidance` contains immutable, framework-independent `AccessibilityGuidance`, `GuidanceObservation`, and `GuidanceAction` values and the synchronous, Sendable `AccessibilityGuidanceProviding` boundary. `DeterministicAccessibilityGuidanceProvider` is stateless and composed in `AppDependencies`. It accepts finalized findings only and performs no I/O, pixel processing, inference, or logging. Guidance generation does not depend on timestamps, random IDs, raw OCR confidence, or display text matching.
+
+The only supported finding category is `potentialLowContrastText`. Environmental signage remains contextual evidence, not a separate negative finding. The rule preserves any finalized recognized text and estimated ratio, explains why text/background distinction may matter, supplies direct checks from the expected viewing position and representative lighting, and offers three optional improvements: increase visual difference, simplify a complex background **if present**, and re-check after changes. Words such as EXIT do not select legal, tactile/Braille, route, or sign-placement assumptions. Missing text or estimates remain missing. Camera limitations are explicit, and limited evidence adds a stronger verification prompt without duplicating the advice list. Evidence strength remains a discrete description, never a probability or verdict.
+
+Observation, interpretation, and advice are separate fields and sections. Detail does not expose internal frame counts, raw framework confidence, candidate buffers, or analyzer IDs. Existing finalized evidence is preserved in storage; current human-readable advice does not rewrite it. Whole sentences use Foundation localization APIs, SwiftUI headings use localizable keys, and action IDs remain independent of translated text. Localization beyond the initial English wording remains future work.
+
+**Historical strategy: Option B.** Persist evidence only; derive guidance from current rules when opening either new or historical review. Rules carry a stable semantic ID and integer version (`text.potential-low-contrast`, version 1); change the version when rule meaning changes. Guidance is ephemeral and is never represented as advice captured at scan time. The screen explains that suggestions are general rules for that finding type. SwiftData schema v1, enum raw values, mapping, duplicate-save semantics, and migration plan are unchanged. Unknown stored categories retain M9's safe unsupported-record behavior and are still deletable; they are not reinterpreted as contrast. A general fallback rule has no category-specific improvements, recognized evidence, or inferred evidence strength for future unsupported-category presentation.
+
+Concise review cards link through the existing `AppRoute.findingDetail(AccessibilityFinding)` to one `FindingDetailView`. The route owns a compact immutable finding value, not camera resources or a repository. `AppNavigator` remains the sole navigation owner. Back removes only the detail route, returning to the same live-completion or historical scan review. Opening details cannot save again, restart analysis, or alter the snapshot. Two findings have distinct route values and detail identity. Zero-finding reviews have no guidance control.
+
+The detail hierarchy is title → observed evidence → possible impact → direct checks → possible improvements → evidence strength/estimate → limitations. It uses semantic headings, primary text on system background, wrapping system fonts, a scroll layout, contextual View Guidance labels, numbered actions with spoken item/count context, and an explicit 44-point Back control. No automatic announcements are added. Native navigation supplies focus context; `accessibilityReduceMotion` disables app navigation transaction animation when requested. Manual VoiceOver/focus, Voice Control, maximum text size, small-screen/landscape, Light/Dark, Differentiate Without Color, and Reduce Motion checks remain release gates.
+
 ## First-run onboarding preference
 
 The sole first-run preference is a non-sensitive, namespaced Boolean stored through an injectable `OnboardingCompletionStoring` boundary. Production composition uses `UserDefaults`; tests, previews, and DEBUG-only UI-test launch overrides use deterministic in-memory storage. `OnboardingState` is the only owner of this completion state and gates the root view before `NavigationStack`, so onboarding completion cannot leave a history entry. This preference is deliberately separate from the future SwiftData scan repository. Onboarding intentionally has no global Skip action: its privacy and limitation explanations are essential context before reaching the app shell.
@@ -255,6 +269,7 @@ AccessLens/
 │   ├── Camera/
 │   ├── Vision/
 │   ├── Analysis/
+│   ├── Guidance/
 │   ├── Persistence/
 │   ├── Export/
 │   ├── Accessibility/
@@ -281,6 +296,7 @@ Organize by feature first and place reusable, platform-facing capabilities in `C
 | Completed scan repository actor | sole private SwiftData context, schema mapping, saved scan records and explicit transactions. |
 | Completion save view model (`@MainActor`) | one immutable snapshot and retryable save status; does not own live analysis. |
 | History / historical review view models (`@MainActor`) | loading/error/delete state and domain summary/review values; no storage context. |
+| Guidance provider / finding detail | stateless current-rule derivation / immutable presentation; detail route belongs to AppNavigator and owns no services or camera state. |
 | Accessibility announcement coordinator (`@MainActor`) | coalescing/rate limit/deduplication of spoken announcements. |
 
 Transient live state includes frame/sample-buffer references, raw Vision observations, in-flight work, analysis generation, quality signals, temporary overlays, and live stabilization history. Milestone 9 persists only completed scan metadata and finalized finding evidence through the repository. The navigation route holds an in-memory domain copy; persistence is independently owned. Names, image retention, reports, and export remain future work. Raw frames, runtime queues, temporary overlays, candidates, and mutable live state are never persisted.

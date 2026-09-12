@@ -14,6 +14,7 @@
 | 7 — Accessibility finding stabilization + evidence fusion | **COMPLETE** | Framework-independent, session-scoped findings now require repeated text-and-region-consistent usable contrast evidence. Bounded evidence fusion provides stable identity, provenance, expiry, controlled VoiceOver, and honest Scan presentation; findings remain transient and local. |
 | 8 — Scan session completion + accessible review | **COMPLETE** | Explicit scan-session lifecycle, idempotent Finish/Discard, late-result rejection, immutable in-memory completed snapshot, accessible Scan Review/Done flow, and deterministic completion/review tests added. No persistence, history, export, new analyzer, networking, analytics, score, or compliance claim introduced. |
 | 9 — Production persistence + complete scan history | **COMPLETE** | Actor-owned SwiftData schema v1, finalized-domain mapping, automatic idempotent save with failure/retry review, newest-first History, shared historical review, confirmed individual deletion, and isolated storage/UI regression tests. No raw frames/images/OCR streams, cloud sync, new analyzers, reporting, or export. |
+| 10 — Actionable accessibility findings + deterministic guidance | **COMPLETE** | Pure category guidance, current-rule historical strategy, shared accessible finding details, unchanged schema v1, and complete guidance/compatibility/UI regression evidence. |
 
 ## Planned staged workflow
 
@@ -28,8 +29,8 @@
 | 7 — Accessibility finding stabilization + evidence fusion | Bounded, explainable observation → candidate → finding promotion and expiry; no persistence | M6 | Domain geometry/association/promotion/expiry/memory tests; UI regression and build. |
 | 8 — Scan session completion + accessible review | Finish/discard lifecycle, immutable in-memory review snapshot, accessible review and Done flow; no persistence | M7 | Completion/session-isolation/resource-cleanup tests; UI review regressions and build. |
 | 9 — Local saved scans | SwiftData repository, migration/recovery, saved-scan history/review | M8 | Persistence/corruption/migration tests; device storage validation. |
-| 10 — Reports/export | Versioned report composition, user-controlled sharing, export privacy UX | M9 | Export tests and physical share-sheet/document validation. |
-| 11 — Hardening and release readiness | Accessibility audit, privacy audit, performance/lifecycle hardening, full regression and release build | M1–M10 | All release gates pass, including physical-device QA. |
+| 10 — Actionable accessibility guidance | Deterministic category rules, accessible finding details in new/historical review, unchanged storage schema | M9 | Guidance, compatibility, navigation, complete unit/UI regression and Debug build. |
+| 11+ — Future scope, not started | Reports/export and final hardening remain required; milestone numbering/scope awaits an explicit request | M10 checkpoint | Export, accessibility/privacy/performance audits, Release build, physical QA and distribution gates remain open. |
 
 Future capability expansion (for example, constrained contrast indicators or custom ML) is not implied by this roadmap. It requires a separately approved specification, defensibility review, tests, and validation.
 
@@ -134,4 +135,16 @@ At the end of every milestone: complete its scoped implementation; run focused t
 - Storage/privacy: only finalized scan metadata and explanatory stabilized finding values are persisted. Text is retained only as contextual evidence in a finalized finding. No schema field stores images, image URLs, frames, crops, screenshots, pixel/sample buffers, raw OCR histories, rejected text, Vision objects, transient candidates, or stabilization buffers. No uploads, networking, analytics, backend, third-party packages, new detector, score, or certification claim.
 - Concurrency/schema: one actor lazily creates/owns the SwiftData context away from MainActor; explicit atomic save/rollback; versioned v1 schema and stable enum strings; no context in UI and no new unchecked Sendable annotation. No migration is needed for the first schema; future versions require tested migration stages.
 - Accessibility: explicit Home/History/Delete/Retry controls, locale-aware dates, meaningful zero-finding rows/empty states, semantic system colors/fonts, scrolling and wrapping, and shared uncertainty/evidence presentation. Manual VoiceOver, maximum Dynamic Type, Voice Control, Light/Dark, Reduce Motion, Differentiate Without Color, small iPhone, and landscape remain **USER VALIDATION REQUIRED**.
-- Storage is in private Application Support with normal iOS file protection and OS backup eligibility; CloudKit is disabled. Device passcode/lock and backup/restore checks remain **USER VALIDATION REQUIRED**. Reporting/export/remediation, future migrations, release hardening, and distribution remain incomplete. Milestone 10 has not begun.
+- Storage is in private Application Support with normal iOS file protection and OS backup eligibility; CloudKit is disabled. Device passcode/lock and backup/restore checks remain **USER VALIDATION REQUIRED**. Reporting/export, future migrations, release hardening, and distribution remain incomplete. Guidance work is recorded separately below.
+
+## Milestone 10 — actionable accessibility guidance
+
+Status: **COMPLETE**. The user-approved Milestone 10 scope supersedes the old roadmap's reports/export assignment; Milestone 11 has not begun.
+
+- A stateless Sendable provider derives versioned guidance from the only supported finding category, `potentialLowContrastText`. Signage words provide context only. Observation, interpretation, checks, optional improvements, evidence strength and camera limitations remain separate; absent evidence is never fabricated.
+- Review cards now open one shared accessible detail through typed app navigation. Back preserves the same completed/historical scan; zero-finding review has no guidance, and distinct findings retain independent evidence.
+- Historical scans use current guidance rules (version 1); SwiftData v1 and all persisted fields/mapping remain unchanged. No migration or additional storage is introduced. Unknown stored meanings still fail safely; the general fallback supplies only direct-review advice.
+- Guidance uses localizable whole sentences and semantic action IDs. Details use semantic headings, primary/system colors, numbered actions with spoken list context, wrapping Dynamic Type, a scroll layout and explicit Back. Reduce Motion disables navigation animation. Manual accessibility validation remains **USER VALIDATION REQUIRED**.
+- New tests cover category structure, deterministic output, no word-based over-inference, missing evidence, strength wording, unknown categories, historical v1 round trips, independent routes, live/historical guidance, Back, multiple findings, and maximum text-size/landscape reachability.
+- Debug build: **PASSED**, iPhone 17 Pro / iOS Simulator 26.5, 2026-09-11. Complete unit suite: **100 executed / 100 passed / 0 failed / 0 skipped**. Complete UI suite: **19 executed / 19 passed / 0 failed / 0 skipped**.
+- No generative AI, remote API, web search, networking, analytics, new detector, score, certification, export, report or sharing feature was introduced. No camera data, raw OCR stream or guidance is newly persisted; no environmental content logging was added.

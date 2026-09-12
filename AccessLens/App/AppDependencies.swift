@@ -14,6 +14,7 @@ final class AppDependencies {
     let cameraLifecycleCoordinator: CameraLifecycleCoordinator
     let analysisCoordinator: AnalysisCoordinator
     let completedScanRepository: any CompletedScanRepository
+    let guidanceProvider: any AccessibilityGuidanceProviding
     /// DEBUG launch composition may provide deterministic evidence for one
     /// test scan. Production composition always returns an empty array.
     private let scanFindingOverrideProvider: ScanFindingOverrideProvider
@@ -27,10 +28,12 @@ final class AppDependencies {
         cameraSessionController: CameraSessionController? = nil,
         analysisCoordinator: AnalysisCoordinator? = nil,
         completedScanRepository: (any CompletedScanRepository)? = nil,
+        guidanceProvider: any AccessibilityGuidanceProviding = DeterministicAccessibilityGuidanceProvider(),
         scanFindingOverrides: [[AccessibilityFinding]] = [],
         scanAnalysisPresentationOverride: Bool = false
     ) {
         self.navigator = navigator ?? AppNavigator()
+        self.guidanceProvider = guidanceProvider
         self.completedScanRepository = completedScanRepository ?? SwiftDataCompletedScanRepository()
         self.lifecycleCoordinator = lifecycleCoordinator ?? AppLifecycleCoordinator()
         self.onboardingState = onboardingState ?? OnboardingState(
@@ -177,7 +180,8 @@ private enum AppLaunchConfiguration {
             return []
         }
         let valueIndex = arguments.index(after: argumentIndex)
-        guard valueIndex < arguments.endIndex, arguments[valueIndex] == "stable-low-contrast" else {
+        guard valueIndex < arguments.endIndex,
+              ["stable-low-contrast", "multiple-low-contrast"].contains(arguments[valueIndex]) else {
             return []
         }
 
@@ -186,13 +190,14 @@ private enum AppLaunchConfiguration {
             return []
         }
         let sessionID = AnalysisSessionID(rawValue: sessionUUID)
-        return [AccessibilityFinding(
-            id: findingID,
+        let contexts = arguments[valueIndex] == "multiple-low-contrast" ? ["EXIT", "ELEVATOR"] : ["EXIT"]
+        return contexts.enumerated().map { index, text in AccessibilityFinding(
+            id: index == 0 ? findingID : sessionUUID,
             category: .potentialLowContrastText,
             title: "Potential low contrast",
             explanation: "Text in this area may be difficult to distinguish from its background.",
             evidenceSummary: "Deterministic UI-test finding.",
-            evidenceStrength: .moderate,
+            evidenceStrength: index == 0 ? .moderate : .limited,
             region: NormalizedRegion(x: 0.2, y: 0.2, width: 0.3, height: 0.1),
             firstObservedTime: 1,
             lastObservedTime: 3,
@@ -206,9 +211,9 @@ private enum AppLaunchConfiguration {
                 AnalyzerIdentifier(rawValue: "vision.text.v1"),
                 AnalyzerIdentifier(rawValue: "vision.visual-contrast.v1")
             ],
-            relevantText: "EXIT",
+            relevantText: text,
             estimatedContrastRatio: ContrastRatio(lighterLuminance: 0.2, darkerLuminance: 0.02)
-        )]
+        ) }
     }
 
     static func scanAnalysisPresentationOverride(arguments: [String]) -> Bool {
@@ -217,6 +222,6 @@ private enum AppLaunchConfiguration {
         }
         let valueIndex = arguments.index(after: argumentIndex)
         guard valueIndex < arguments.endIndex else { return false }
-        return ["stable-low-contrast", "analyzing-empty"].contains(arguments[valueIndex])
+        return ["stable-low-contrast", "multiple-low-contrast", "analyzing-empty"].contains(arguments[valueIndex])
     }
 }

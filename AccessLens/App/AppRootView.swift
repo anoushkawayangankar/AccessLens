@@ -7,6 +7,7 @@ struct AppRootView: View {
     @ObservedObject private var onboardingState: OnboardingState
 
     @Environment(\.scenePhase) private var scenePhase
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     init(dependencies: AppDependencies) {
         self.dependencies = dependencies
@@ -30,6 +31,7 @@ struct AppRootView: View {
                             destination(for: route)
                         }
                 }
+                .transaction { if reduceMotion { $0.disablesAnimations = true } }
             }
         }
         .onChange(of: scenePhase, initial: true) { _, newPhase in
@@ -41,6 +43,11 @@ struct AppRootView: View {
     @ViewBuilder
     private func destination(for route: AppRoute) -> some View {
         switch route {
+        case let .findingDetail(finding):
+            FindingDetailView(guidance: dependencies.guidanceProvider.guidance(for: finding)) {
+                navigator.goBack()
+            }
+            .id(finding.id)
         case .scan:
             ScanView(
                 authorizationService: dependencies.cameraAuthorizationService,
