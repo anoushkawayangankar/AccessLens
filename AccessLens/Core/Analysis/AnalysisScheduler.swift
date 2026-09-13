@@ -43,16 +43,19 @@ nonisolated final class AnalysisScheduler: @unchecked Sendable {
     private let lock = NSLock()
     private let analyzers: [any AccessibilityAnalyzer]
     private let performancePolicy: AnalysisPerformancePolicy
+    private let qualityEvaluator: ScanQualityEvaluator
     private let resultHandler: @Sendable (AnalysisPassResult) -> Void
     private var state = State()
 
     init(
         analyzers: [any AccessibilityAnalyzer],
         performancePolicy: AnalysisPerformancePolicy = AnalysisPerformancePolicy(),
+        qualityEvaluator: ScanQualityEvaluator = ScanQualityEvaluator(),
         resultHandler: @escaping @Sendable (AnalysisPassResult) -> Void = { _ in }
     ) {
         self.analyzers = analyzers
         self.performancePolicy = performancePolicy
+        self.qualityEvaluator = qualityEvaluator
         self.resultHandler = resultHandler
     }
 
@@ -179,8 +182,13 @@ nonisolated final class AnalysisScheduler: @unchecked Sendable {
         state.inFlight = InFlightWork(workID: workID, frame: frame, task: nil)
 
         let analyzers = analyzers
-        let task = Task { [weak self, analyzers] in
-            let execution = await Self.execute(analyzers: analyzers, context: context)
+        let qualityEvaluator = qualityEvaluator
+        let task = Task { [weak self, analyzers, qualityEvaluator] in
+            let execution = await Self.execute(
+                analyzers: analyzers,
+                qualityEvaluator: qualityEvaluator,
+                context: context
+            )
             self?.complete(workID: workID, frame: frame, execution: execution)
         }
         state.inFlight?.task = task
@@ -223,7 +231,8 @@ nonisolated final class AnalysisScheduler: @unchecked Sendable {
                 contrastObservations: output.contrastObservations,
                 passageObservations: output.passageObservations,
                 candidates: output.candidates,
-                failures: output.failures
+                failures: output.failures,
+                frameQuality: output.frameQuality
             )
         }
 
@@ -240,6 +249,7 @@ nonisolated final class AnalysisScheduler: @unchecked Sendable {
 
     private static func execute(
         analyzers: [any AccessibilityAnalyzer],
+        qualityEvaluator: ScanQualityEvaluator,
         context: AnalysisContext
     ) async -> AnalysisExecution {
         var observations: [NormalizedObservation] = []
@@ -248,6 +258,26 @@ nonisolated final class AnalysisScheduler: @unchecked Sendable {
         var passageObservations: [PassageObservation] = []
         var candidates: [FindingCandidate] = []
         var failures: [AnalysisFailure] = []
+
+        let initialQuality: ScanFrameQuality
+        do {
+            initialQuality = try qualityEvaluator.evaluate(context)
+        } catch is CancellationError {
+            return .cancelled
+        } catch {
+            initialQuality = .unavailable
+        }
+
+        // Clearly unusable exposure contributes no accessibility evidence and
+        // avoids the more expensive Vision/analyzer pass.
+        if initialQuality.state == .unusable {
+            AppLog.analysis.debug("Skipped analyzers for unusable frame")
+            return .completed(AnalysisExecutionOutput(
+                observations: [], textObservations: [], contrastObservations: [],
+                passageObservations: [], candidates: [], failures: [],
+                frameQuality: initialQuality
+            ))
+        }
 
         for analyzer in analyzers {
             if Task.isCancelled {
@@ -284,13 +314,15 @@ nonisolated final class AnalysisScheduler: @unchecked Sendable {
             }
         }
 
+        let finalQuality = initialQuality.applyingFraming(to: candidates)
         return .completed(AnalysisExecutionOutput(
             observations: observations,
             textObservations: textObservations,
             contrastObservations: contrastObservations,
             passageObservations: passageObservations,
             candidates: candidates,
-            failures: failures
+            failures: failures,
+            frameQuality: finalQuality
         ))
     }
 }
@@ -307,4 +339,5 @@ private struct AnalysisExecutionOutput {
     let passageObservations: [PassageObservation]
     let candidates: [FindingCandidate]
     let failures: [AnalysisFailure]
+    let frameQuality: ScanFrameQuality
 }

@@ -1,15 +1,16 @@
 # AccessLens — Production Architecture
 
-**Scope:** Production contract with implementation refinements through Milestone 11. Sections labeled with prior milestones record their scope at that time; the Milestone 9 persistence section supersedes the former in-memory-only completed-review lifetime. Export and reporting remain future work.
+**Scope:** Production contract with implementation refinements through Milestone 12. Sections labeled with prior milestones record their scope at that time; the Milestone 9 persistence section supersedes the former in-memory-only completed-review lifetime. Export and reporting remain future work.
 
 ## Architectural shape
 
 Use a straightforward SwiftUI feature structure with focused Apple-native services and domain models. Keep the domain independent of AVFoundation/Vision types by normalizing framework output at the boundary. Avoid “Clean Architecture” ceremony and giant managers.
 
 ```text
-Camera frame → bounded scheduler → Vision requests → normalized observations
-→ independent analyzers → finding candidates → confidence/evidence policy
-→ stabilizer → live stable findings → Finish Scan → immutable completed snapshot
+Camera frame → bounded scheduler → bounded scan-quality gate → normalized observations
+→ independent analyzers → analyzer-specific confidence normalization → finding candidates
+→ stabilizer → unified AccessibilityEvidence → fusion engine → user-facing findings
+→ Finish Scan → immutable completed snapshot
 → local repository save → Scan Review / Scan History → historical Scan Review
 ```
 
@@ -226,6 +227,51 @@ The only new finding category is `potentialNarrowPassage`. It says the RoomPlan 
 SwiftData schema v2 adds three optional finalized-finding fields: canonical passage width in metres, stable measurement-method raw value and stable measurement-quality raw value. The frozen v1 schema remains unchanged and a lightweight v1→v2 migration is declared. Nil defaults preserve every Milestone 9/10 low-contrast record without fabricated passage evidence; both record envelope versions 1 and 2 map through strict validation. New passage records require a valid width, `.roomPlanLiDAR` and `.usable`; partial or inconsistent data is rejected. Guidance remains Option B: persisted evidence is rendered through current deterministic rules.
 
 There is no overlay in Milestone 11 because physical-device projection accuracy has not been validated. RoomPlan coaching instructions may provide truthful, transient capture prompts (move back/closer, slow down, add light, or difficult scene). They do not create findings. Physical LiDAR accuracy, projection/orientation, camera lifecycle, accessibility and performance remain **USER VALIDATION REQUIRED**.
+
+## Unified evidence intelligence and scan quality (Milestone 12)
+
+### Evidence boundary and provenance
+
+Milestone 12 makes the production path explicit: raw analyzer observation → candidate → stabilized `AccessibilityEvidence` → fused `AccessibilityFinding` → presentation/persistence. `AccessibilityEvidence` is a compact, framework-independent value containing its UUID, analysis session, category, `AccessibilityAnalyzerSource` set (`text`, `contrast`, `passage`, or explicit `unknown`), source analyzer IDs, bounded time/frame range, normalized region, discrete normalized confidence/evidence strength, categorical capture-quality context, bounded supporting count, polarity, source summary and only the category-specific finalized measurement fields. It contains no Vision, AVFoundation, RoomPlan, ARKit, image or pixel-buffer object.
+
+`AnalyzerConfidenceNormalizationPolicy` does not compare unlike framework confidence values. For OCR-supported contrast evidence, the existing 0.35 OCR admission floor is normalized into weak (0.35–<0.55), moderate (0.55–<0.75) or strong (≥0.75) recognition support; this only weights whether recognized text repeated reliably, while usable image-space contrast evidence and same-region linkage remain separately required. For passage evidence, only usable RoomPlan/LiDAR width evidence normalizes as strong input; approximate/unavailable measurement cannot enter a passage track. Plain environmental-signage OCR remains contextual and cannot create a negative finding by itself. Raw confidence is never presented or persisted as accessibility certainty.
+
+The existing `AccessibilityFindingStabilizer` remains the bounded temporal-track owner. It now records normalized confidence and frame quality per candidate and emits `AccessibilityEvidence` directly from eligible tracks. Good/moderate-or-strong evidence contributes one support unit; limited-frame or weak-OCR evidence contributes one half. The existing six-entry bound therefore requires up to six consistent limited observations rather than allowing three limited frames to promote. A severely unusable frame contributes nothing. The prior finding projection remains private compatibility behavior for Milestone 7–11 domain tests; `AnalysisCoordinator` publishes only the new fusion engine's findings.
+
+### Fusion, association, conflicts and duplicate control
+
+`AccessibilityEvidenceFusionEngine` is a dedicated, stateless, Sendable finalizer invoked by `AnalysisCoordinator`; neither coordinator nor `ScanViewModel` contains category policy. One invocation examines at most 12 current stabilized evidence values and returns at most six findings plus internal `rejected` / `provisional` / `surfaced` decisions. Support counts are capped at six, so camera frames are not represented as unlimited independent observations. Duplicate fusion can corroborate promotion but cannot raise strength above the strongest stabilized input; capture quality is called good only when at least three adequate observations form a strict majority over limited observations.
+
+Spatial association uses top-left normalized regions and IoU ≥ 0.50. Temporal association requires evidence to remain within five seconds and within a secondary sanity bound of 600 submitted frame-sequence steps. The deliberately loose sequence bound prevents malformed/nonlocal frame ranges from merging without assuming that every submitted camera frame was independently analyzed. Low-contrast evidence additionally requires the same case/diacritic-folded exact text identity; passage evidence never fuses with text or contrast. A stable evidence ID associates with itself. Different regions, different text, different categories and evidence outside either window remain separate. When duplicate stabilized evidence is related, the earliest stable identity is retained and provenance/support are merged within bounds.
+
+Category rules remain separate. A low-contrast finding requires recognized environmental signage and usable contrast evidence already linked in the same candidate/region; the engine does not manufacture another signage category. Usable same-region estimates classified `likelyAdequate` enter the contrast stabilizer as internal conflicting evidence, never as a finding. Effective support must reach three and conflicting weight may not exceed half of supporting weight; several adequate observations therefore suppress an isolated low estimate, while one contrary frame cannot dominate several consistent low estimates or produce strong evidence. Passage requires usable RoomPlan/LiDAR measurement evidence and repeated/outlier-rejected geometry; no text or contrast evidence can strengthen it. Unsupported source/category/measurement combinations are rejected.
+
+Fused findings carry discrete limited/moderate/strong wording, a concise rationale, source analyzer IDs and a `FindingQualityContext`. Limited evidence uses explicit possible/check-directly wording. Evidence summaries explain repeated regional support and, for signage, the real OCR/contrast overlap; they do not expose raw ML confidence, a score or legal conclusion.
+
+### Scan-quality evaluation and gating
+
+`ScanQualityEvaluator` runs off MainActor once per frame already admitted by `AnalysisScheduler`, before expensive analyzers. It samples at most a 32 × 32 luminance grid directly from BGRA memory or the luma plane of supported bi-planar camera buffers. It makes no full-resolution image copy and retains no grid after classification. Unsupported/missing image format becomes `limited`/`imageUnavailable` and does not block existing analyzer-failure behavior.
+
+`ScanQualityPolicy` has tested centralized thresholds, not a numeric user score:
+
+- severe underexposure: mean luminance ≤ 0.06 and at least 85% of samples ≤ 0.04;
+- severe overexposure: mean luminance ≥ 0.94 and at least 85% of samples ≥ 0.96;
+- possible highlight saturation: at least 35% of samples ≥ 0.985, described only as a possible bright-reflection limitation;
+- insufficient visible detail: sampled luminance range < 0.04;
+- low sharpness: mean horizontal/vertical neighbor luminance difference < 0.012, applied only when visible range is sufficient because a plain surface can resemble blur numerically;
+- target clipping: a real analyzer-candidate region touches the normalized frame edge within 0.005.
+
+Only the two extreme-exposure combinations are `unusable` and skip Vision/analyzer work. Low sharpness, insufficient detail, possible highlight saturation and clipping are `limited` and reduce evidence weight; otherwise quality is `good`. AccessLens does not implement semantic glare detection. It does not implement motion sensing or optical flow in this milestone: standard AVCapture supplies no current motion value, and new sensor/flow infrastructure was not justified merely to create a label. Existing RoomPlan coaching remains independent evidence-backed capture help.
+
+Quality evaluation inherits the scheduler's one-in-flight/one-latest-pending capacity and cadence: 0.75 seconds normally, 1.5 seconds under serious thermal pressure or Low Power Mode, and suspended/cancelled at critical thermal state. Ending/replacing a session cancels the one task; quality sampling checks cancellation before, during each bounded row and after sampling. `ScanQualityGuidanceStabilizer` keeps at most eight categorical states. A limiting reason must recur on two admitted frames before display and two subsequent good frames clear it. Priority is clipped area, low sharpness, severe underexposure, severe overexposure, possible highlight saturation, insufficient visible detail; unavailable imagery has no repeated alert. Messages are concise: keep the area in view, hold steady/include detail, improve lighting, reduce direct light, change angle for bright reflections, or include more detail.
+
+The Scan surface adds a text-and-symbol capture-guidance card only after debounce, with a categorical state and semantic accessibility identifier. It uses system fonts/colors, reflows with Dynamic Type, requires no touch/gesture, adds no animation/speech/haptic stream, and does not rely on color. Review optionally shows `Analysis quality: Good/Limited`; each finding detail shows discrete evidence strength, its persisted rationale and categorical supporting-quality context. These are VoiceOver-readable text, not overlay-only information. Manual VoiceOver, maximum Dynamic Type, Voice Control, Reduce Motion, Differentiate Without Color and physical-camera appearance remain **USER VALIDATION REQUIRED**.
+
+### Persistence, concurrency and privacy
+
+SwiftData schema v3 adds only optional scan-level `qualityState`/`qualitySummary` and finding-level `qualityState`/`qualitySummary` strings. The migration chain is frozen v1 → frozen v2 → v3 using lightweight stages. Nil fields preserve Milestone 9–11 records without recomputation or invented quality; both legacy schema versions have migration tests. Historical review renders stored final explanations directly and derives the same deterministic remediation guidance as live completion.
+
+`AnalysisCoordinator` remains orchestration only: session gate → stabilizer → fusion → compact result forwarder. The evaluator/fusion values are Sendable, the guidance history is lock-isolated and bounded, and no detached tasks are introduced. Existing one-task structured cancellation and stale-session checks cover quality, analyzers, stabilization and fusion before MainActor publication. Persistence still stores no frames, luminance grids, per-frame metrics, candidates, Vision objects, motion streams, depth maps or geometry buffers. All processing remains on device; networking, analytics, external AI, scores and legal verdicts remain absent. Simulator tests validate deterministic policy/integration but do not establish physical-device image quality, preview responsiveness, CPU/memory/thermal behavior or threshold validity in diverse real scenes; those remain **USER VALIDATION REQUIRED**.
 
 ## First-run onboarding preference
 

@@ -13,6 +13,8 @@ nonisolated struct AccessibilityGuidance: Equatable, Sendable {
     let possibleImprovements: [GuidanceAction]
     let limitations: String
     let evidenceStrength: FindingEvidenceStrength?
+    let evidenceSummary: String?
+    let qualityContext: FindingQualityContext?
     let verificationNote: String
 }
 

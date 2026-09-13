@@ -12,11 +12,15 @@ nonisolated final class AnalysisCoordinator: CameraFrameConsumer, @unchecked Sen
     private let resultForwarder: AnalysisResultForwarder
     private let sessionGate: AnalysisSessionGate
     private let findingStabilizer: AccessibilityFindingStabilizer
+    private let fusionEngine: AccessibilityEvidenceFusionEngine
+    private let qualityGuidanceStabilizer: ScanQualityGuidanceStabilizer
 
     init(
         analyzers: [any AccessibilityAnalyzer] = [],
         performanceStateProvider: any AnalysisPerformanceStateProviding = ProcessInfoAnalysisPerformanceStateProvider(),
         findingStabilizer: AccessibilityFindingStabilizer = AccessibilityFindingStabilizer(),
+        fusionEngine: AccessibilityEvidenceFusionEngine = AccessibilityEvidenceFusionEngine(),
+        qualityGuidanceStabilizer: ScanQualityGuidanceStabilizer = ScanQualityGuidanceStabilizer(),
         resultHandler: @escaping @Sendable (StabilizedAnalysisResult) -> Void = { _ in }
     ) {
         let resultForwarder = AnalysisResultForwarder(handler: resultHandler)
@@ -32,7 +36,13 @@ nonisolated final class AnalysisCoordinator: CameraFrameConsumer, @unchecked Sen
                 let stabilized = findingStabilizer.ingest(
                     result.candidates,
                     sessionID: result.sessionID,
-                    currentTime: currentTime
+                    currentTime: currentTime,
+                    frameQuality: result.frameQuality
+                )
+                let fused = fusionEngine.fuse(stabilized.evidence, sessionID: result.sessionID)
+                let qualityPresentation = qualityGuidanceStabilizer.ingest(
+                    result.frameQuality,
+                    sessionID: result.sessionID
                 )
                 guard sessionGate.isActive(result.sessionID) else {
                     AppLog.analysis.debug("Rejected stale stabilized result")
@@ -41,9 +51,11 @@ nonisolated final class AnalysisCoordinator: CameraFrameConsumer, @unchecked Sen
                 resultForwarder.publish(StabilizedAnalysisResult(
                     sessionID: result.sessionID,
                     frameSequence: result.frameSequence,
-                    findings: stabilized.findings,
-                    newlyPromotedFindingIDs: stabilized.newlyPromotedFindingIDs,
-                    failures: result.failures
+                    findings: fused.findings,
+                    newlyPromotedFindingIDs: stabilized.newlyPromotedFindingIDs
+                        .intersection(Set(fused.findings.map(\.id))),
+                    failures: result.failures,
+                    qualityPresentation: qualityPresentation
                 ))
             }
         )
@@ -51,6 +63,8 @@ nonisolated final class AnalysisCoordinator: CameraFrameConsumer, @unchecked Sen
         self.resultForwarder = resultForwarder
         self.sessionGate = sessionGate
         self.findingStabilizer = findingStabilizer
+        self.fusionEngine = fusionEngine
+        self.qualityGuidanceStabilizer = qualityGuidanceStabilizer
         performanceMonitor = AnalysisPerformanceMonitor(
             provider: performanceStateProvider,
             update: scheduler.updatePerformanceState
@@ -78,6 +92,7 @@ nonisolated final class AnalysisCoordinator: CameraFrameConsumer, @unchecked Sen
         }
         scheduler.beginSession(sessionID)
         findingStabilizer.beginSession(sessionID)
+        qualityGuidanceStabilizer.beginSession(sessionID)
         performanceMonitor.refresh()
         return sessionID
     }
@@ -98,8 +113,15 @@ nonisolated final class AnalysisCoordinator: CameraFrameConsumer, @unchecked Sen
 
         if let sessionID {
             scheduler.endSession(sessionID)
-            let findings = findingStabilizer.findings(for: sessionID)
+            let stabilized = findingStabilizer.ingest(
+                [],
+                sessionID: sessionID,
+                currentTime: nil
+            )
+            let evidence = stabilized.evidence
+            let findings = fusionEngine.fuse(evidence, sessionID: sessionID).findings
             findingStabilizer.endSession(sessionID)
+            qualityGuidanceStabilizer.endSession(sessionID)
             if logCompletion {
                 AppLog.analysis.info("Analysis session completed")
             }

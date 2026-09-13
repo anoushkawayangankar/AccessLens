@@ -51,13 +51,15 @@ nonisolated struct CompletedScan: Identifiable, Equatable, Sendable, Hashable {
     let completedAt: Date
     let findings: [AccessibilityFinding]
     let limitationsSummary: String
+    let qualitySummary: ScanQualitySummary?
 
     init(
         sessionID: UUID,
         startedAt: Date,
         completedAt: Date,
         findings: [AccessibilityFinding],
-        limitationsSummary: String = "AccessLens identifies potential issues from camera observations. It may miss barriers, and lighting, glare, motion, and camera angle can affect results. It does not provide accessibility or legal compliance certification."
+        limitationsSummary: String = "AccessLens identifies potential issues from camera observations. It may miss barriers, and lighting, glare, motion, and camera angle can affect results. It does not provide accessibility or legal compliance certification.",
+        qualitySummary: ScanQualitySummary? = nil
     ) {
         id = sessionID
         self.sessionID = sessionID
@@ -65,6 +67,7 @@ nonisolated struct CompletedScan: Identifiable, Equatable, Sendable, Hashable {
         self.completedAt = completedAt
         self.findings = findings
         self.limitationsSummary = limitationsSummary
+        self.qualitySummary = qualitySummary
     }
 
     var findingCount: Int { findings.count }
@@ -105,7 +108,11 @@ nonisolated struct ScanSessionWorkflow: Sendable {
         return completing
     }
 
-    mutating func complete(with findings: [AccessibilityFinding], at date: Date) -> CompletedScan? {
+    mutating func complete(
+        with findings: [AccessibilityFinding],
+        qualitySummary: ScanQualitySummary? = nil,
+        at date: Date
+    ) -> CompletedScan? {
         guard let session, session.lifecycleState == .completing else { return nil }
         let completed = session.transitioned(to: .completed, at: date)
         self.session = completed
@@ -113,7 +120,8 @@ nonisolated struct ScanSessionWorkflow: Sendable {
             sessionID: completed.id,
             startedAt: completed.startedAt,
             completedAt: date,
-            findings: findings
+            findings: findings,
+            qualitySummary: qualitySummary
         )
     }
 

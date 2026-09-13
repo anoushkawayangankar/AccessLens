@@ -55,6 +55,7 @@ struct AppRootView: View {
                 passageCaptureController: dependencies.passageCaptureController,
                 analysisCoordinator: dependencies.analysisCoordinator,
                 initialFindingsProvider: dependencies.nextScanFindingOverride,
+                initialQualityPresentation: dependencies.scanQualityPresentationOverride,
                 forceAnalysisPresentation: dependencies.scanAnalysisPresentationOverride,
                 onCompleted: { completedScan in
                     navigator.showCompletedScan(completedScan)

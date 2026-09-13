@@ -37,6 +37,15 @@ struct FindingDetailView: View {
                     if let strength = guidance.evidenceStrength {
                         Text(strength.guidanceLabel)
                     }
+                    if let evidenceSummary = guidance.evidenceSummary {
+                        Text(evidenceSummary)
+                            .accessibilityIdentifier("finding-evidence-summary")
+                    }
+                    if let quality = guidance.qualityContext {
+                        Text("Supporting capture quality: \(quality.state.displayName)")
+                        Text(quality.summary)
+                            .accessibilityIdentifier("finding-quality-context")
+                    }
                     if let ratio = guidance.observation.estimatedContrastRatio {
                         Text("Estimated text/background contrast: \(ratio.value, format: .number.precision(.fractionLength(1))):1")
                     }
@@ -101,9 +110,9 @@ struct FindingDetailView: View {
 extension FindingEvidenceStrength {
     var guidanceLabel: String {
         switch self {
-        case .limited: String(localized: "Evidence strength: Limited")
-        case .moderate: String(localized: "Evidence strength: Moderate")
-        case .strong: String(localized: "Evidence strength: Strong")
+        case .limited: String(localized: "Limited evidence")
+        case .moderate: String(localized: "Moderate evidence")
+        case .strong: String(localized: "Strong evidence")
         }
     }
 }

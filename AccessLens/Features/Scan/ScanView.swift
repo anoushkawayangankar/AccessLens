@@ -18,6 +18,7 @@ struct ScanView: View {
         analysisCoordinator: AnalysisCoordinator,
         initialFindings: [AccessibilityFinding] = [],
         initialFindingsProvider: (() -> [AccessibilityFinding])? = nil,
+        initialQualityPresentation: ScanQualityPresentation? = nil,
         forceAnalysisPresentation: Bool = false,
         onCompleted: @escaping (CompletedScan) -> Void = { _ in },
         onDiscard: @escaping () -> Void = {}
@@ -34,6 +35,7 @@ struct ScanView: View {
                 analysisCoordinator: analysisCoordinator,
                 initialFindings: initialFindings,
                 initialFindingsProvider: initialFindingsProvider,
+                initialQualityPresentation: initialQualityPresentation,
                 forceAnalysisPresentation: forceAnalysisPresentation
             )
         )
@@ -53,6 +55,10 @@ struct ScanView: View {
 
                 preview
                 statusCard
+
+                if let guidance = viewModel.liveQualityGuidance {
+                    qualityGuidanceCard(guidance)
+                }
 
                 Text(analysisSummary)
                     .font(.body)
@@ -312,6 +318,26 @@ struct ScanView: View {
         .frame(maxWidth: .infinity, alignment: .leading)
         .background(.quaternary, in: RoundedRectangle(cornerRadius: AppCornerRadius.card, style: .continuous))
         .accessibilityIdentifier("potential-findings")
+    }
+
+    private func qualityGuidanceCard(_ guidance: String) -> some View {
+        VStack(alignment: .leading, spacing: AppSpacing.small) {
+            Label("Capture guidance", systemImage: "viewfinder")
+                .font(.headline)
+                .accessibilityAddTraits(.isHeader)
+            Text(guidance)
+                .font(.body)
+            if let summary = viewModel.latestQualitySummary {
+                Text("Current analysis quality: \(summary.state.displayName)")
+                    .font(.footnote)
+                    .foregroundStyle(.secondary)
+            }
+        }
+        .padding(AppSpacing.medium)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(.quaternary, in: RoundedRectangle(cornerRadius: AppCornerRadius.card, style: .continuous))
+        .accessibilityElement(children: .combine)
+        .accessibilityIdentifier("scan-quality-guidance")
     }
 
     private func findingCard(_ finding: AccessibilityFinding) -> some View {

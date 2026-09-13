@@ -12,7 +12,8 @@ nonisolated enum ScanStorageMapper {
               scan.completedAt >= scan.startedAt,
               scan.findings.count <= maximumFindings,
               Set(scan.findings.map(\.id)).count == scan.findings.count,
-              scan.limitationsSummary.count <= maximumTextLength else {
+              scan.limitationsSummary.count <= maximumTextLength,
+              scan.qualitySummary?.summary.count ?? 0 <= maximumTextLength else {
             throw ScanRepositoryError.invalidRecord
         }
         for finding in scan.findings {
@@ -37,6 +38,12 @@ nonisolated enum ScanStorageMapper {
                     throw ScanRepositoryError.invalidRecord
                 }
             }
+            if let quality = finding.qualityContext {
+                guard quality.state != .unusable,
+                      quality.summary.count <= maximumTextLength else {
+                    throw ScanRepositoryError.invalidRecord
+                }
+            }
             switch finding.category {
             case .potentialLowContrastText:
                 guard finding.passageEvidence == nil else { throw ScanRepositoryError.invalidRecord }
@@ -53,17 +60,18 @@ nonisolated enum ScanStorageMapper {
         }
     }
 
-    static func stored(_ scan: CompletedScan) throws -> ScanStorageSchemaV2.StoredScan {
+    static func stored(_ scan: CompletedScan) throws -> ScanStorageSchemaV3.StoredScan {
         try validate(scan)
-        return ScanStorageSchemaV2.StoredScan(
+        return ScanStorageSchemaV3.StoredScan(
             id: scan.id, startedAt: scan.startedAt, completedAt: scan.completedAt,
             limitations: scan.limitationsSummary,
-            findings: scan.findings.enumerated().map { ScanStorageSchemaV2.StoredFinding($0.element, position: $0.offset) }
+            qualitySummary: scan.qualitySummary,
+            findings: scan.findings.enumerated().map { ScanStorageSchemaV3.StoredFinding($0.element, position: $0.offset) }
         )
     }
 
-    static func domain(_ stored: ScanStorageSchemaV2.StoredScan) throws -> CompletedScan {
-        guard stored.recordVersion == 1 || stored.recordVersion == 2 else {
+    static func domain(_ stored: ScanStorageSchemaV3.StoredScan) throws -> CompletedScan {
+        guard (1...3).contains(stored.recordVersion) else {
             throw ScanRepositoryError.unsupportedRecord
         }
         guard stored.findings.count <= maximumFindings,
@@ -72,15 +80,27 @@ nonisolated enum ScanStorageMapper {
         guard ordered.enumerated().allSatisfy({ $0.offset == $0.element.position }) else {
             throw ScanRepositoryError.invalidRecord
         }
+        let qualityValues = [stored.qualityState, stored.qualitySummary]
+        let qualitySummary: ScanQualitySummary?
+        if qualityValues.contains(where: { $0 != nil }) {
+            guard let stateRaw = stored.qualityState,
+                  let state = ScanQualityState(rawValue: stateRaw),
+                  let summary = stored.qualitySummary,
+                  !summary.isEmpty else { throw ScanRepositoryError.invalidRecord }
+            qualitySummary = ScanQualitySummary(state: state, summary: summary)
+        } else {
+            qualitySummary = nil
+        }
         let scan = CompletedScan(
             sessionID: stored.id, startedAt: stored.startedAt, completedAt: stored.completedAt,
-            findings: try ordered.map(domain), limitationsSummary: stored.limitations
+            findings: try ordered.map(domain), limitationsSummary: stored.limitations,
+            qualitySummary: qualitySummary
         )
         try validate(scan)
         return scan
     }
 
-    private static func domain(_ stored: ScanStorageSchemaV2.StoredFinding) throws -> AccessibilityFinding {
+    private static func domain(_ stored: ScanStorageSchemaV3.StoredFinding) throws -> AccessibilityFinding {
         guard let category = AccessibilityFindingCategory(rawValue: stored.category),
               let strength = FindingEvidenceStrength(rawValue: stored.evidenceStrength),
               let lifecycle = FindingLifecycleState(rawValue: stored.lifecycle) else {
@@ -126,6 +146,18 @@ nonisolated enum ScanStorageMapper {
         } else {
             passageEvidence = nil
         }
+        let qualityValues = [stored.qualityState, stored.qualitySummary]
+        let qualityContext: FindingQualityContext?
+        if qualityValues.contains(where: { $0 != nil }) {
+            guard let stateRaw = stored.qualityState,
+                  let state = ScanQualityState(rawValue: stateRaw),
+                  state != .unusable,
+                  let summary = stored.qualitySummary,
+                  !summary.isEmpty else { throw ScanRepositoryError.invalidRecord }
+            qualityContext = FindingQualityContext(state: state, summary: summary)
+        } else {
+            qualityContext = nil
+        }
         return AccessibilityFinding(
             id: stored.id, category: category, title: stored.title,
             explanation: stored.explanation, evidenceSummary: stored.evidenceSummary,
@@ -136,7 +168,8 @@ nonisolated enum ScanStorageMapper {
             sessionID: AnalysisSessionID(rawValue: stored.analysisSessionID),
             sourceAnalyzerIDs: stored.sourceAnalyzerIDs.map { AnalyzerIdentifier(rawValue: $0) },
             lifecycleState: lifecycle, relevantText: stored.relevantText,
-            estimatedContrastRatio: ratio, passageEvidence: passageEvidence
+            estimatedContrastRatio: ratio, passageEvidence: passageEvidence,
+            qualityContext: qualityContext
         )
     }
 }

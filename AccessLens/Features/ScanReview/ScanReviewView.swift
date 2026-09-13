@@ -66,6 +66,13 @@ struct ScanReviewView: View {
             Text(viewModel.reviewIntroduction)
                 .font(.body)
                 .foregroundStyle(.secondary)
+            if let quality = viewModel.completedScan.qualitySummary {
+                Text("Analysis quality: \(quality.state.displayName)")
+                    .font(.body.weight(.semibold))
+                    .accessibilityIdentifier("scan-quality-summary")
+                Text(quality.summary)
+                    .font(.body)
+            }
         }
         .padding(AppSpacing.medium)
         .frame(maxWidth: .infinity, alignment: .leading)
@@ -117,6 +124,9 @@ struct ScanReviewView: View {
                 .font(.body)
             Text(finding.evidenceStrength.guidanceLabel)
                 .font(.subheadline)
+            Text(finding.evidenceSummary)
+                .font(.subheadline)
+                .accessibilityIdentifier("review-finding-evidence")
             Text("Potential issue estimated from camera observations.")
                 .font(.footnote)
             NavigationLink(value: AppRoute.findingDetail(finding)) {

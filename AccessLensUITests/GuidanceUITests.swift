@@ -43,7 +43,7 @@ final class GuidanceUITests: XCTestCase {
         for (id, text, strength) in [(firstID, "EXIT", "Moderate"), (secondID, "ELEVATOR", "Limited")] {
             openGuidance(id, app: app)
             XCTAssertEqual(app.staticTexts["guidance-recognized-text"].label, "Recognized text: \(text)")
-            let evidence = app.staticTexts["Evidence strength: \(strength)"]
+            let evidence = app.staticTexts["\(strength) evidence"]
             reveal(evidence, in: app)
             XCTAssertTrue(evidence.isHittable)
             app.buttons["guidance-back"].tap()

@@ -116,8 +116,32 @@ final class AccessibilityGuidanceTests: XCTestCase {
         XCTAssertEqual(restored, original)
         XCTAssertEqual(restored.findings.map(provider.guidance), original.findings.map(provider.guidance))
         let record = try ScanStorageMapper.stored(restored)
-        XCTAssertEqual(record.recordVersion, 2)
+        XCTAssertEqual(record.recordVersion, 3)
         XCTAssertEqual(try ScanStorageMapper.domain(record), original)
+    }
+
+    func testLimitedFusedEvidenceAddsUncertaintyWithoutChangingCategoryAdvice() {
+        let base = fixture(strength: .limited)
+        let finding = AccessibilityFinding(
+            id: base.id, category: base.category, title: base.title,
+            explanation: base.explanation,
+            evidenceSummary: "AccessLens observed a possible low-contrast area, but evidence was limited. Check the area directly.",
+            evidenceStrength: .limited, region: base.region,
+            firstObservedTime: base.firstObservedTime, lastObservedTime: base.lastObservedTime,
+            supportingFrameRange: base.supportingFrameRange,
+            supportingObservationCount: base.supportingObservationCount,
+            sessionID: base.sessionID, sourceAnalyzerIDs: base.sourceAnalyzerIDs,
+            relevantText: base.relevantText, estimatedContrastRatio: base.estimatedContrastRatio,
+            qualityContext: FindingQualityContext(
+                state: .limited,
+                summary: "Some supporting observations had limited sharpness, exposure, or framing."
+            )
+        )
+        let guidance = provider.guidance(for: finding)
+        XCTAssertEqual(guidance.evidenceSummary, finding.evidenceSummary)
+        XCTAssertEqual(guidance.qualityContext, finding.qualityContext)
+        XCTAssertEqual(guidance.whatToCheck, provider.guidance(for: base).whatToCheck)
+        XCTAssertTrue(guidance.verificationNote.contains("limited"))
     }
 
     @MainActor

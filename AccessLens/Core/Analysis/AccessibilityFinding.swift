@@ -21,6 +21,7 @@ nonisolated struct AccessibilityFinding: Identifiable, Equatable, Sendable, Hash
     let relevantText: String?
     let estimatedContrastRatio: ContrastRatio?
     let passageEvidence: PassageFindingEvidence?
+    let qualityContext: FindingQualityContext?
 
     init(
         id: UUID = UUID(),
@@ -39,7 +40,8 @@ nonisolated struct AccessibilityFinding: Identifiable, Equatable, Sendable, Hash
         lifecycleState: FindingLifecycleState = .active,
         relevantText: String?,
         estimatedContrastRatio: ContrastRatio?,
-        passageEvidence: PassageFindingEvidence? = nil
+        passageEvidence: PassageFindingEvidence? = nil,
+        qualityContext: FindingQualityContext? = nil
     ) {
         self.id = id
         self.category = category
@@ -58,6 +60,7 @@ nonisolated struct AccessibilityFinding: Identifiable, Equatable, Sendable, Hash
         self.relevantText = relevantText
         self.estimatedContrastRatio = estimatedContrastRatio
         self.passageEvidence = passageEvidence
+        self.qualityContext = qualityContext
     }
 }
 
@@ -93,6 +96,23 @@ nonisolated struct StabilizedAnalysisResult: Equatable, Sendable {
     let findings: [AccessibilityFinding]
     let newlyPromotedFindingIDs: Set<UUID>
     let failures: [AnalysisFailure]
+    let qualityPresentation: ScanQualityPresentation?
+
+    init(
+        sessionID: AnalysisSessionID,
+        frameSequence: AnalysisFrameSequence,
+        findings: [AccessibilityFinding],
+        newlyPromotedFindingIDs: Set<UUID>,
+        failures: [AnalysisFailure],
+        qualityPresentation: ScanQualityPresentation? = nil
+    ) {
+        self.sessionID = sessionID
+        self.frameSequence = frameSequence
+        self.findings = findings
+        self.newlyPromotedFindingIDs = newlyPromotedFindingIDs
+        self.failures = failures
+        self.qualityPresentation = qualityPresentation
+    }
 }
 
 /// Geometry helpers intentionally operate in AccessLens's top-left normalized

@@ -327,6 +327,9 @@ nonisolated enum FindingCandidateCategory: String, Equatable, Sendable, Hashable
     case unclassified
     case environmentalSignage
     case potentialLowContrastText
+    /// Usable same-region evidence that conflicts with a potential-low result.
+    /// It is stabilization input only and can never become a user finding.
+    case contrastLikelyAdequate
     case potentialNarrowPassage
 }
 
@@ -385,4 +388,5 @@ nonisolated struct AnalysisPassResult: Equatable, Sendable {
     let passageObservations: [PassageObservation]
     let candidates: [FindingCandidate]
     let failures: [AnalysisFailure]
+    let frameQuality: ScanFrameQuality
 }

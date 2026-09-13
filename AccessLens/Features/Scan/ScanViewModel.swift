@@ -29,6 +29,8 @@ final class ScanViewModel: ObservableObject {
     @Published private(set) var activeFindings: [AccessibilityFinding] = []
     @Published private(set) var scanLifecycleState: ScanSessionLifecycleState = .idle
     @Published private(set) var completionError: ScanCompletionError?
+    @Published private(set) var liveQualityGuidance: String?
+    @Published private(set) var latestQualitySummary: ScanQualitySummary?
 
     private let authorizationService: any CameraAuthorizationProviding
     private let sessionController: CameraSessionController
@@ -52,6 +54,7 @@ final class ScanViewModel: ObservableObject {
         analysisCoordinator: AnalysisCoordinator,
         initialFindings: [AccessibilityFinding] = [],
         initialFindingsProvider: (() -> [AccessibilityFinding])? = nil,
+        initialQualityPresentation: ScanQualityPresentation? = nil,
         forceAnalysisPresentation: Bool = false,
         clock: any ScanSessionTimeProviding = SystemScanSessionClock()
     ) {
@@ -66,6 +69,8 @@ final class ScanViewModel: ObservableObject {
         self.forceAnalysisPresentation = forceAnalysisPresentation
         self.clock = clock
         authorization = authorizationService.currentAuthorization()
+        liveQualityGuidance = initialQualityPresentation?.guidance
+        latestQualitySummary = initialQualityPresentation?.summary
         sessionController.setAuthorization(authorization)
         self.passageCaptureController.setAuthorization(authorization)
         analysisCoordinator.setResultHandler { [weak self] result in
@@ -160,9 +165,14 @@ final class ScanViewModel: ObservableObject {
         // which rejects any late OCR/contrast result deterministically.
         sessionController.setScanVisible(false)
         passageCaptureController.setScanVisible(false)
+        let qualitySummary = latestQualitySummary
         let finalFindings = stopLiveAnalysis(returningFinalFindings: true)
 
-        guard let completed = workflow.complete(with: finalFindings, at: clock.now()) else {
+        guard let completed = workflow.complete(
+            with: finalFindings,
+            qualitySummary: qualitySummary,
+            at: clock.now()
+        ) else {
             completionError = .couldNotCreateSnapshot
             scanLifecycleState = .discarded
             return nil
@@ -171,6 +181,8 @@ final class ScanViewModel: ObservableObject {
         scanLifecycleState = .completed
         activeFindings = []
         announcedFindingIDs = []
+        liveQualityGuidance = nil
+        latestQualitySummary = nil
         AppLog.lifecycle.info("Scan completed")
         return completed
     }
@@ -186,6 +198,8 @@ final class ScanViewModel: ObservableObject {
         _ = stopLiveAnalysis(returningFinalFindings: false)
         activeFindings = []
         announcedFindingIDs = []
+        liveQualityGuidance = nil
+        latestQualitySummary = nil
         AppLog.lifecycle.info("Scan discarded")
     }
 
@@ -240,6 +254,7 @@ final class ScanViewModel: ObservableObject {
         }
         activeFindings = []
         announcedFindingIDs = []
+        liveQualityGuidance = nil
         isAnalyzingEnvironment = false
         return returningFinalFindings ? finalFindings : []
     }
@@ -248,6 +263,10 @@ final class ScanViewModel: ObservableObject {
         guard scanLifecycleState == .scanning,
               activeAnalysisSessionID == result.sessionID else { return }
         activeFindings = result.findings
+        if let quality = result.qualityPresentation {
+            liveQualityGuidance = quality.guidance
+            latestQualitySummary = quality.summary
+        }
 
         let newIDs = result.newlyPromotedFindingIDs.subtracting(announcedFindingIDs)
         if let finding = activeFindings.first(where: { newIDs.contains($0.id) }) {

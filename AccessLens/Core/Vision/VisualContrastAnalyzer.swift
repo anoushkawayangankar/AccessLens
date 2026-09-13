@@ -82,14 +82,19 @@ nonisolated final class VisualContrastAnalyzer: AccessibilityAnalyzer {
                 )
                 contrastObservations.append(contrastObservation)
 
-                if classificationPolicy.classify(measurement) == .potentiallyLow {
+                let classification = classificationPolicy.classify(measurement)
+                if classification == .potentiallyLow || classification == .likelyAdequate {
                     candidates.append(FindingCandidate(
                         sessionID: textObservation.sessionID,
                         sourceObservationIDs: [textObservation.id, contrastObservation.id],
                         frameSequence: textObservation.frameSequence,
                         region: textObservation.region,
-                        evidenceKind: "visual-contrast.potential-low",
-                        category: .potentialLowContrastText,
+                        evidenceKind: classification == .potentiallyLow
+                            ? "visual-contrast.potential-low"
+                            : "visual-contrast.likely-adequate",
+                        category: classification == .potentiallyLow
+                            ? .potentialLowContrastText
+                            : .contrastLikelyAdequate,
                         recognizedText: textObservation.text,
                         rawFrameworkConfidence: textObservation.rawFrameworkConfidence,
                         presentationTimeSeconds: textObservation.presentationTimeSeconds,

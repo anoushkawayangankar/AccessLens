@@ -48,6 +48,9 @@ nonisolated final class AccessibilityFindingStabilizer: @unchecked Sendable {
         let timestamp: TimeInterval
         let ratio: ContrastRatio
         let sourceAnalyzerIDs: [AnalyzerIdentifier]
+        let supportsFinding: Bool
+        let frameQuality: ScanQualityState
+        let confidence: NormalizedEvidenceConfidence
     }
 
     private struct Track: Sendable {
@@ -70,6 +73,8 @@ nonisolated final class AccessibilityFindingStabilizer: @unchecked Sendable {
         let method: PassageMeasurementMethod
         let quality: PassageMeasurementQuality
         let sourceAnalyzerIDs: [AnalyzerIdentifier]
+        let frameQuality: ScanQualityState
+        let confidence: NormalizedEvidenceConfidence
     }
 
     private struct PassageTrack: Sendable {
@@ -84,6 +89,7 @@ nonisolated final class AccessibilityFindingStabilizer: @unchecked Sendable {
     }
 
     private let policy: FindingStabilizationPolicy
+    private let confidencePolicy = AnalyzerConfidenceNormalizationPolicy()
     private let lock = NSLock()
     private var activeSessionID: AnalysisSessionID?
     private var tracks: [Track] = []
@@ -116,12 +122,22 @@ nonisolated final class AccessibilityFindingStabilizer: @unchecked Sendable {
     func ingest(
         _ candidates: [FindingCandidate],
         sessionID: AnalysisSessionID,
-        currentTime: TimeInterval?
+        currentTime: TimeInterval?,
+        frameQuality: ScanFrameQuality = ScanFrameQuality(state: .good, reasons: [], metrics: nil)
     ) -> FindingStabilizationResult {
         lock.lock()
         defer { lock.unlock() }
         guard activeSessionID == sessionID else {
-            return FindingStabilizationResult(findings: [], newlyPromotedFindingIDs: [])
+            return FindingStabilizationResult(findings: [], evidence: [], newlyPromotedFindingIDs: [])
+        }
+
+        guard frameQuality.state != .unusable else {
+            AppLog.analysis.debug("Rejected finding evidence from unusable frame")
+            return FindingStabilizationResult(
+                findings: activeFindings,
+                evidence: normalizedEvidenceUnlocked(),
+                newlyPromotedFindingIDs: []
+            )
         }
 
         let latestTime = currentTime ?? candidates.map(evidenceTime(for:)).max()
@@ -131,14 +147,17 @@ nonisolated final class AccessibilityFindingStabilizer: @unchecked Sendable {
 
         var newlyPromotedFindingIDs: Set<UUID> = []
         for candidate in candidates where candidate.sessionID == sessionID {
-            if let passageInput = qualifyingPassageInput(from: candidate) {
+            if let passageInput = qualifyingPassageInput(from: candidate),
+               let confidence = confidencePolicy.confidence(for: candidate) {
                 let evidence = PassageEvidence(
                     frameSequence: candidate.frameSequence,
                     timestamp: evidenceTime(for: candidate),
                     width: passageInput.width,
                     method: passageInput.evidence.measurementMethod,
                     quality: passageInput.evidence.measurementQuality,
-                    sourceAnalyzerIDs: candidate.sourceAnalyzerIDs
+                    sourceAnalyzerIDs: candidate.sourceAnalyzerIDs,
+                    frameQuality: frameQuality.state,
+                    confidence: confidence
                 )
                 if let index = passageTracks.firstIndex(where: { associates($0, with: candidate, input: passageInput) }) {
                     append(evidence, candidate: candidate, toPassageTrackAt: index)
@@ -154,12 +173,16 @@ nonisolated final class AccessibilityFindingStabilizer: @unchecked Sendable {
                 continue
             }
 
-            guard let input = qualifyingInput(from: candidate) else { continue }
+            guard let input = qualifyingInput(from: candidate),
+                  let confidence = confidencePolicy.confidence(for: candidate) else { continue }
             let evidence = Evidence(
                 frameSequence: candidate.frameSequence,
                 timestamp: evidenceTime(for: candidate),
                 ratio: input.ratio,
-                sourceAnalyzerIDs: candidate.sourceAnalyzerIDs
+                sourceAnalyzerIDs: candidate.sourceAnalyzerIDs,
+                supportsFinding: input.supportsFinding,
+                frameQuality: frameQuality.state,
+                confidence: confidence
             )
 
             if let trackIndex = tracks.firstIndex(where: { associates($0, with: candidate, input: input) }) {
@@ -179,6 +202,7 @@ nonisolated final class AccessibilityFindingStabilizer: @unchecked Sendable {
         enforceBounds()
         return FindingStabilizationResult(
             findings: activeFindings,
+            evidence: normalizedEvidenceUnlocked(),
             newlyPromotedFindingIDs: newlyPromotedFindingIDs.intersection(Set(activeFindings.map(\.id)))
         )
     }
@@ -231,8 +255,8 @@ nonisolated final class AccessibilityFindingStabilizer: @unchecked Sendable {
         )
     }
 
-    private func qualifyingInput(from candidate: FindingCandidate) -> (text: String, normalizedText: String, region: NormalizedRegion, ratio: ContrastRatio)? {
-        guard candidate.category == .potentialLowContrastText,
+    private func qualifyingInput(from candidate: FindingCandidate) -> (text: String, normalizedText: String, region: NormalizedRegion, ratio: ContrastRatio, supportsFinding: Bool)? {
+        guard candidate.category == .potentialLowContrastText || candidate.category == .contrastLikelyAdequate,
               candidate.contrastEvidenceQuality == .usable,
               let ratio = candidate.estimatedContrastRatio,
               let text = candidate.recognizedText,
@@ -241,7 +265,7 @@ nonisolated final class AccessibilityFindingStabilizer: @unchecked Sendable {
               NormalizedRegionAssociation.isValid(region) else {
             return nil
         }
-        return (text, normalizedText, region, ratio)
+        return (text, normalizedText, region, ratio, candidate.category == .potentialLowContrastText)
     }
 
     private func qualifyingPassageInput(
@@ -259,7 +283,7 @@ nonisolated final class AccessibilityFindingStabilizer: @unchecked Sendable {
     private func associates(
         _ track: Track,
         with candidate: FindingCandidate,
-        input: (text: String, normalizedText: String, region: NormalizedRegion, ratio: ContrastRatio)
+        input: (text: String, normalizedText: String, region: NormalizedRegion, ratio: ContrastRatio, supportsFinding: Bool)
     ) -> Bool {
         guard category(for: candidate) == track.category,
               input.normalizedText == track.normalizedText,
@@ -272,7 +296,7 @@ nonisolated final class AccessibilityFindingStabilizer: @unchecked Sendable {
 
     private func addTrack(
         candidate: FindingCandidate,
-        input: (text: String, normalizedText: String, region: NormalizedRegion, ratio: ContrastRatio),
+        input: (text: String, normalizedText: String, region: NormalizedRegion, ratio: ContrastRatio, supportsFinding: Bool),
         evidence: Evidence
     ) {
         tracks.append(Track(
@@ -343,10 +367,19 @@ nonisolated final class AccessibilityFindingStabilizer: @unchecked Sendable {
     /// findings keep their identity and are updated in place.
     private func promoteOrUpdate(trackAt index: Int) -> UUID? {
         let track = tracks[index]
+        let support = track.evidence.filter(\.supportsFinding)
+        let conflicts = track.evidence.filter { !$0.supportsFinding }
+        let supportWeight = support.reduce(0) { $0 + evidenceWeight($1) }
+        let conflictWeight = conflicts.reduce(0) { $0 + evidenceWeight($1) }
         guard let first = track.evidence.first,
               let last = track.evidence.last,
-              track.evidence.count >= policy.requiredSupportingObservations,
+              supportWeight >= Double(policy.requiredSupportingObservations),
+              conflictWeight <= supportWeight / 2,
               last.timestamp - first.timestamp <= policy.evidenceWindow else {
+            if let findingID = track.findingID {
+                activeFindings.removeAll { $0.id == findingID }
+                tracks[index].findingID = nil
+            }
             return nil
         }
 
@@ -365,14 +398,27 @@ nonisolated final class AccessibilityFindingStabilizer: @unchecked Sendable {
     }
 
     private func makeFinding(from track: Track) -> AccessibilityFinding {
-        let sources = Array(Set(track.evidence.flatMap(\.sourceAnalyzerIDs)))
+        let supportingEvidence = track.evidence.filter(\.supportsFinding)
+        let sources = Array(Set(supportingEvidence.flatMap(\.sourceAnalyzerIDs)))
             .sorted { $0.rawValue < $1.rawValue }
-        let latestRatio = track.evidence.last?.ratio
-        let strength: FindingEvidenceStrength = track.evidence.count >= policy.strongEvidenceSupportingObservations
-            ? .strong
-            : .moderate
-        let evidenceCount = track.evidence.count
+        let latestRatio = supportingEvidence.last?.ratio
+        let goodEvidenceCount = supportingEvidence.filter {
+            $0.frameQuality == .good && $0.confidence != .weak
+        }.count
+        let conflictCount = track.evidence.count - supportingEvidence.count
+        let strength: FindingEvidenceStrength
+        if goodEvidenceCount >= policy.strongEvidenceSupportingObservations, conflictCount <= 1 {
+            strength = .strong
+        } else if goodEvidenceCount >= policy.requiredSupportingObservations {
+            strength = .moderate
+        } else {
+            strength = .limited
+        }
+        let evidenceCount = supportingEvidence.count
+        let firstSupporting = supportingEvidence.first
+        let lastSupporting = supportingEvidence.last
         let summary = "Text \u{201C}\(track.displayText)\u{201D} was observed in a similar area across \(evidenceCount) analyses. Estimated contrast remained low with usable camera evidence."
+        let qualityContext = makeQualityContext(from: supportingEvidence.map(\.frameQuality))
         return AccessibilityFinding(
             id: track.findingID ?? UUID(),
             category: track.category,
@@ -381,18 +427,19 @@ nonisolated final class AccessibilityFindingStabilizer: @unchecked Sendable {
             evidenceSummary: summary,
             evidenceStrength: strength,
             region: track.region,
-            firstObservedTime: track.firstObservedTime,
-            lastObservedTime: track.lastObservedTime,
+            firstObservedTime: firstSupporting?.timestamp ?? track.firstObservedTime,
+            lastObservedTime: lastSupporting?.timestamp ?? track.lastObservedTime,
             supportingFrameRange: FindingFrameRange(
-                first: track.evidence.first?.frameSequence ?? AnalysisFrameSequence(rawValue: 0),
-                last: track.evidence.last?.frameSequence ?? AnalysisFrameSequence(rawValue: 0)
+                first: firstSupporting?.frameSequence ?? AnalysisFrameSequence(rawValue: 0),
+                last: lastSupporting?.frameSequence ?? AnalysisFrameSequence(rawValue: 0)
             ),
             supportingObservationCount: evidenceCount,
             sessionID: track.sessionID,
             sourceAnalyzerIDs: sources,
             relevantText: track.displayText,
             estimatedContrastRatio: latestRatio,
-            passageEvidence: nil
+            passageEvidence: nil,
+            qualityContext: qualityContext
         )
     }
 
@@ -403,16 +450,24 @@ nonisolated final class AccessibilityFindingStabilizer: @unchecked Sendable {
             widths,
             relativeTolerance: policy.passageMeasurementOutlierTolerance
         )
+        let inlierEvidence = track.evidence.filter { evidence in
+            inliers.contains { $0 == evidence.width }
+        }
+        let effectiveSupport = inlierEvidence.reduce(0) { $0 + evidenceWeight($1) }
         guard let first = track.evidence.first,
               let last = track.evidence.last,
-              inliers.count >= policy.requiredSupportingObservations,
+              effectiveSupport >= Double(policy.requiredSupportingObservations),
               last.timestamp - first.timestamp <= policy.evidenceWindow,
               let medianWidth = PassageMeasurementAggregator.medianRejectingOutliers(
                 inliers,
                 relativeTolerance: policy.passageMeasurementOutlierTolerance
               ) else { return nil }
 
-        let finding = makePassageFinding(from: track, inlierCount: inliers.count, width: medianWidth)
+        let finding = makePassageFinding(
+            from: track,
+            inlierEvidence: inlierEvidence,
+            width: medianWidth
+        )
         if let findingID = track.findingID,
            let findingIndex = activeFindings.firstIndex(where: { $0.id == findingID }) {
             activeFindings[findingIndex] = finding
@@ -427,13 +482,25 @@ nonisolated final class AccessibilityFindingStabilizer: @unchecked Sendable {
 
     private func makePassageFinding(
         from track: PassageTrack,
-        inlierCount: Int,
+        inlierEvidence: [PassageEvidence],
         width: PassageWidth
     ) -> AccessibilityFinding {
         let sources = Array(Set(track.evidence.flatMap(\.sourceAnalyzerIDs)))
             .sorted { $0.rawValue < $1.rawValue }
-        let strength: FindingEvidenceStrength = inlierCount >= policy.strongEvidenceSupportingObservations
-            ? .strong : .moderate
+        let goodEvidenceCount = inlierEvidence.filter {
+            $0.frameQuality == .good && $0.confidence != .weak
+        }.count
+        let strength: FindingEvidenceStrength
+        if goodEvidenceCount >= policy.strongEvidenceSupportingObservations {
+            strength = .strong
+        } else if goodEvidenceCount >= policy.requiredSupportingObservations {
+            strength = .moderate
+        } else {
+            strength = .limited
+        }
+        let inlierCount = inlierEvidence.count
+        let firstInlier = inlierEvidence.first
+        let lastInlier = inlierEvidence.last
         let centimeters = Int((width.meters * 100).rounded())
         return AccessibilityFinding(
             id: track.findingID ?? UUID(), category: .potentialNarrowPassage,
@@ -441,15 +508,140 @@ nonisolated final class AccessibilityFindingStabilizer: @unchecked Sendable {
             explanation: "The visible opening was repeatedly estimated as relatively narrow. Verify the clear opening directly before making accessibility decisions.",
             evidenceSummary: "A LiDAR-supported room scan repeatedly identified a similar door or opening. The median estimated opening width was about \(centimeters) centimeters after rejecting inconsistent measurements.",
             evidenceStrength: strength, region: track.region,
-            firstObservedTime: track.firstObservedTime, lastObservedTime: track.lastObservedTime,
+            firstObservedTime: firstInlier?.timestamp ?? track.firstObservedTime,
+            lastObservedTime: lastInlier?.timestamp ?? track.lastObservedTime,
             supportingFrameRange: FindingFrameRange(
-                first: track.evidence.first?.frameSequence ?? AnalysisFrameSequence(rawValue: 0),
-                last: track.evidence.last?.frameSequence ?? AnalysisFrameSequence(rawValue: 0)
+                first: firstInlier?.frameSequence ?? AnalysisFrameSequence(rawValue: 0),
+                last: lastInlier?.frameSequence ?? AnalysisFrameSequence(rawValue: 0)
             ),
             supportingObservationCount: inlierCount, sessionID: track.sessionID,
             sourceAnalyzerIDs: sources, relevantText: nil, estimatedContrastRatio: nil,
             passageEvidence: PassageFindingEvidence(
                 estimatedWidth: width, measurementMethod: .roomPlanLiDAR, measurementQuality: .usable
+            ),
+            qualityContext: makeQualityContext(from: inlierEvidence.map(\.frameQuality))
+        )
+    }
+
+    private func evidenceWeight(_ evidence: Evidence) -> Double {
+        evidence.frameQuality == .limited || evidence.confidence == .weak ? 0.5 : 1
+    }
+
+    private func evidenceWeight(_ evidence: PassageEvidence) -> Double {
+        evidence.frameQuality == .limited || evidence.confidence == .weak ? 0.5 : 1
+    }
+
+    private func makeQualityContext(from states: [ScanQualityState]) -> FindingQualityContext {
+        let good = states.filter { $0 == .good }.count
+        let limited = states.filter { $0 == .limited }.count
+        if good >= policy.requiredSupportingObservations, good > limited {
+            return FindingQualityContext(
+                state: .good,
+                summary: String(localized: "Capture quality was adequate across the supporting observations.")
+            )
+        }
+        return FindingQualityContext(
+            state: .limited,
+            summary: String(localized: "Some supporting observations had limited sharpness, exposure, or framing.")
+        )
+    }
+
+    private func normalizedEvidenceUnlocked() -> [AccessibilityEvidence] {
+        let contrastEvidence = tracks.compactMap(makeAccessibilityEvidence)
+        let passageEvidence = passageTracks.compactMap(makeAccessibilityEvidence)
+        return contrastEvidence + passageEvidence
+    }
+
+    /// Builds the central stabilized-evidence value directly from bounded
+    /// track state. User-facing wording is finalized later by the fusion
+    /// engine; the private finding projection remains only for M7-M11 API/test
+    /// compatibility and final completion snapshots.
+    private func makeAccessibilityEvidence(from track: Track) -> AccessibilityEvidence? {
+        guard let findingID = track.findingID else { return nil }
+        let support = track.evidence.filter(\.supportsFinding)
+        let sources = Array(Set(support.flatMap(\.sourceAnalyzerIDs))).sorted { $0.rawValue < $1.rawValue }
+        guard let first = support.first, let last = support.last, let ratio = support.last?.ratio else { return nil }
+        let goodCount = support.filter { $0.frameQuality == .good && $0.confidence != .weak }.count
+        let conflicts = track.evidence.count - support.count
+        let strength: FindingEvidenceStrength
+        if goodCount >= policy.strongEvidenceSupportingObservations, conflicts <= 1 {
+            strength = .strong
+        } else if goodCount >= policy.requiredSupportingObservations {
+            strength = .moderate
+        } else {
+            strength = .limited
+        }
+        return AccessibilityEvidence(
+            id: findingID,
+            sessionID: track.sessionID,
+            category: track.category,
+            analyzerSources: Set(sources.map(AccessibilityAnalyzerSource.source)),
+            sourceAnalyzerIDs: sources,
+            firstObservedTime: first.timestamp,
+            lastObservedTime: last.timestamp,
+            supportingFrameRange: FindingFrameRange(first: first.frameSequence, last: last.frameSequence),
+            region: track.region,
+            strength: strength,
+            qualityContext: makeQualityContext(from: support.map(\.frameQuality)),
+            supportingObservationCount: support.count,
+            sourceSummary: String(localized: "Recognized signage and usable contrast evidence referred to the same region."),
+            title: String(localized: "Potential low contrast"),
+            explanation: String(localized: "Text in this area may be difficult to distinguish from its background."),
+            relevantText: track.displayText,
+            estimatedContrastRatio: ratio,
+            passageEvidence: nil
+        )
+    }
+
+    private func makeAccessibilityEvidence(from track: PassageTrack) -> AccessibilityEvidence? {
+        guard let findingID = track.findingID else { return nil }
+        let widths = track.evidence.map(\.width)
+        let inliers = PassageMeasurementAggregator.inliers(
+            widths,
+            relativeTolerance: policy.passageMeasurementOutlierTolerance
+        )
+        let inlierEvidence = track.evidence.filter { evidence in
+            inliers.contains { $0 == evidence.width }
+        }
+        guard let first = inlierEvidence.first,
+              let last = inlierEvidence.last,
+              let width = PassageMeasurementAggregator.medianRejectingOutliers(
+                inliers,
+                relativeTolerance: policy.passageMeasurementOutlierTolerance
+              ) else { return nil }
+        let sources = Array(Set(inlierEvidence.flatMap(\.sourceAnalyzerIDs)))
+            .sorted { $0.rawValue < $1.rawValue }
+        let goodCount = inlierEvidence.filter { $0.frameQuality == .good && $0.confidence != .weak }.count
+        let strength: FindingEvidenceStrength
+        if goodCount >= policy.strongEvidenceSupportingObservations {
+            strength = .strong
+        } else if goodCount >= policy.requiredSupportingObservations {
+            strength = .moderate
+        } else {
+            strength = .limited
+        }
+        return AccessibilityEvidence(
+            id: findingID,
+            sessionID: track.sessionID,
+            category: .potentialNarrowPassage,
+            analyzerSources: Set(sources.map(AccessibilityAnalyzerSource.source)),
+            sourceAnalyzerIDs: sources,
+            firstObservedTime: first.timestamp,
+            lastObservedTime: last.timestamp,
+            supportingFrameRange: FindingFrameRange(first: first.frameSequence, last: last.frameSequence),
+            region: track.region,
+            strength: strength,
+            qualityContext: makeQualityContext(from: inlierEvidence.map(\.frameQuality)),
+            supportingObservationCount: inlierEvidence.count,
+            sourceSummary: String(localized: "Repeated usable RoomPlan and LiDAR geometry referred to the same opening."),
+            title: String(localized: "Potential narrow passage"),
+            explanation: String(localized: "The visible opening was repeatedly estimated as relatively narrow. Verify the clear opening directly before making accessibility decisions."),
+            relevantText: nil,
+            estimatedContrastRatio: nil,
+            passageEvidence: PassageFindingEvidence(
+                estimatedWidth: width,
+                measurementMethod: .roomPlanLiDAR,
+                measurementQuality: .usable
             )
         )
     }
@@ -488,7 +680,7 @@ nonisolated final class AccessibilityFindingStabilizer: @unchecked Sendable {
         // `qualifyingInput` has already limited candidates to current, real
         // contrast evidence; this mapping remains explicit for future growth.
         switch candidate.category {
-        case .potentialLowContrastText:
+        case .potentialLowContrastText, .contrastLikelyAdequate:
             .potentialLowContrastText
         case .unclassified, .environmentalSignage, .potentialNarrowPassage:
             .potentialLowContrastText
@@ -502,6 +694,7 @@ nonisolated final class AccessibilityFindingStabilizer: @unchecked Sendable {
 
 nonisolated struct FindingStabilizationResult: Equatable, Sendable {
     let findings: [AccessibilityFinding]
+    let evidence: [AccessibilityEvidence]
     let newlyPromotedFindingIDs: Set<UUID>
 }
 

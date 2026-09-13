@@ -61,4 +61,40 @@ enum ScanPersistenceFixtures {
             findings: [passageFinding(sessionID: sessionID)]
         )
     }
+
+    static func fusedScan(id: UUID = UUID()) -> CompletedScan {
+        let base = scan(id: id)
+        let finding = base.findings[0]
+        let fusedFinding = AccessibilityFinding(
+            id: finding.id,
+            category: finding.category,
+            title: finding.title,
+            explanation: finding.explanation,
+            evidenceSummary: "AccessLens observed a possible low-contrast area, but evidence was limited. Check the area directly.",
+            evidenceStrength: .limited,
+            region: finding.region,
+            firstObservedTime: finding.firstObservedTime,
+            lastObservedTime: finding.lastObservedTime,
+            supportingFrameRange: finding.supportingFrameRange,
+            supportingObservationCount: finding.supportingObservationCount,
+            sessionID: finding.sessionID,
+            sourceAnalyzerIDs: finding.sourceAnalyzerIDs,
+            relevantText: finding.relevantText,
+            estimatedContrastRatio: finding.estimatedContrastRatio,
+            qualityContext: FindingQualityContext(
+                state: .limited,
+                summary: "Some supporting observations had limited sharpness, exposure, or framing."
+            )
+        )
+        return CompletedScan(
+            sessionID: id,
+            startedAt: base.startedAt,
+            completedAt: base.completedAt,
+            findings: [fusedFinding],
+            qualitySummary: ScanQualitySummary(
+                state: .limited,
+                summary: "Some areas were captured with limited visibility. Review the environment directly and consider scanning again."
+            )
+        )
+    }
 }

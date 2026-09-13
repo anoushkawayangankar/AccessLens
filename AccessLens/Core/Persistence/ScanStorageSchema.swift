@@ -167,9 +167,109 @@ nonisolated enum ScanStorageSchemaV2: VersionedSchema {
     }
 }
 
+/// Schema v3 persists only finalized categorical quality context and its
+/// explanatory summary. Per-frame metrics, luminance grids, frames, and
+/// analyzer buffers remain transient.
+nonisolated enum ScanStorageSchemaV3: VersionedSchema {
+    static var versionIdentifier: Schema.Version { Schema.Version(3, 0, 0) }
+    static var models: [any PersistentModel.Type] { [StoredScan.self, StoredFinding.self] }
+
+    @Model
+    final class StoredScan {
+        @Attribute(.unique) var id: UUID
+        var recordVersion: Int
+        var startedAt: Date
+        var completedAt: Date
+        var limitations: String
+        var findingCount: Int
+        var qualityState: String?
+        var qualitySummary: String?
+        @Relationship(deleteRule: .cascade, inverse: \StoredFinding.scan)
+        var findings: [StoredFinding]
+
+        init(id: UUID, startedAt: Date, completedAt: Date, limitations: String,
+             qualitySummary: ScanQualitySummary?, findings: [StoredFinding]) {
+            self.id = id
+            recordVersion = 3
+            self.startedAt = startedAt
+            self.completedAt = completedAt
+            self.limitations = limitations
+            findingCount = findings.count
+            qualityState = qualitySummary?.state.rawValue
+            self.qualitySummary = qualitySummary?.summary
+            self.findings = findings
+        }
+    }
+
+    @Model
+    final class StoredFinding {
+        var id: UUID
+        var position: Int
+        var category: String
+        var title: String
+        var explanation: String
+        var evidenceSummary: String
+        var evidenceStrength: String
+        var regionX: Double?
+        var regionY: Double?
+        var regionWidth: Double?
+        var regionHeight: Double?
+        var firstObservedTime: Double
+        var lastObservedTime: Double
+        var firstSequence: String
+        var lastSequence: String
+        var supportingObservationCount: Int
+        var analysisSessionID: UUID
+        var sourceAnalyzerIDs: [String]
+        var lifecycle: String
+        var relevantText: String?
+        var estimatedContrast: Double?
+        var passageWidthMeters: Double?
+        var passageMeasurementMethod: String?
+        var passageMeasurementQuality: String?
+        var qualityState: String?
+        var qualitySummary: String?
+        var scan: StoredScan?
+
+        init(_ finding: AccessibilityFinding, position: Int) {
+            id = finding.id
+            self.position = position
+            category = finding.category.rawValue
+            title = finding.title
+            explanation = finding.explanation
+            evidenceSummary = finding.evidenceSummary
+            evidenceStrength = finding.evidenceStrength.rawValue
+            regionX = finding.region?.x
+            regionY = finding.region?.y
+            regionWidth = finding.region?.width
+            regionHeight = finding.region?.height
+            firstObservedTime = finding.firstObservedTime
+            lastObservedTime = finding.lastObservedTime
+            firstSequence = String(finding.supportingFrameRange.first.rawValue)
+            lastSequence = String(finding.supportingFrameRange.last.rawValue)
+            supportingObservationCount = finding.supportingObservationCount
+            analysisSessionID = finding.sessionID.rawValue
+            sourceAnalyzerIDs = finding.sourceAnalyzerIDs.map(\.rawValue)
+            lifecycle = finding.lifecycleState.rawValue
+            relevantText = finding.relevantText
+            estimatedContrast = finding.estimatedContrastRatio?.value
+            passageWidthMeters = finding.passageEvidence?.estimatedWidth?.meters
+            passageMeasurementMethod = finding.passageEvidence?.measurementMethod.rawValue
+            passageMeasurementQuality = finding.passageEvidence?.measurementQuality.rawValue
+            qualityState = finding.qualityContext?.state.rawValue
+            qualitySummary = finding.qualityContext?.summary
+        }
+    }
+}
+
 nonisolated enum ScanStorageMigrationPlan: SchemaMigrationPlan {
-    static var schemas: [any VersionedSchema.Type] { [ScanStorageSchemaV1.self, ScanStorageSchemaV2.self] }
+    static var schemas: [any VersionedSchema.Type] {
+        [ScanStorageSchemaV1.self, ScanStorageSchemaV2.self, ScanStorageSchemaV3.self]
+    }
     static var stages: [MigrationStage] {
-        [.lightweight(fromVersion: ScanStorageSchemaV1.self, toVersion: ScanStorageSchemaV2.self)]
+        [
+            .lightweight(fromVersion: ScanStorageSchemaV1.self, toVersion: ScanStorageSchemaV2.self),
+            .lightweight(fromVersion: ScanStorageSchemaV2.self, toVersion: ScanStorageSchemaV3.self)
+        ]
     }
 }

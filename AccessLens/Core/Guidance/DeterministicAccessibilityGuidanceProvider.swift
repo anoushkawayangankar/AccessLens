@@ -28,6 +28,8 @@ nonisolated struct DeterministicAccessibilityGuidanceProvider: AccessibilityGuid
             possibleImprovements: [],
             limitations: String(localized: "Category-specific suggestions are unavailable. No condition or improvement can be inferred from an unknown category."),
             evidenceStrength: nil,
+            evidenceSummary: nil,
+            qualityContext: nil,
             verificationNote: String(localized: "Direct review is needed.")
         )
     }
@@ -57,6 +59,8 @@ nonisolated struct DeterministicAccessibilityGuidanceProvider: AccessibilityGuid
             ],
             limitations: String(localized: "Lighting, glare, shadows, motion, camera angle, and camera processing can affect the estimate. It is not a direct measurement of the sign’s actual colors or a formal standards assessment."),
             evidenceStrength: finding.evidenceStrength,
+            evidenceSummary: finding.evidenceSummary,
+            qualityContext: finding.qualityContext,
             verificationNote: finding.evidenceStrength == .limited
                 ? String(localized: "Evidence is limited. Verify the observation directly before deciding whether a change would help.")
                 : String(localized: "Evidence strength describes the supporting camera observations, not certainty. Verify the environment directly before deciding whether a change would help.")
@@ -96,6 +100,8 @@ nonisolated struct DeterministicAccessibilityGuidanceProvider: AccessibilityGuid
             ],
             limitations: String(localized: "The estimate uses RoomPlan geometry on a supported LiDAR device. Camera angle, incomplete capture, reflective surfaces, and room reconstruction can affect it. It is not a survey measurement or a formal standards assessment."),
             evidenceStrength: finding.evidenceStrength,
+            evidenceSummary: finding.evidenceSummary,
+            qualityContext: finding.qualityContext,
             verificationNote: finding.evidenceStrength == .limited
                 ? String(localized: "Evidence is limited. Verify the opening directly and do not rely on the estimate alone.")
                 : String(localized: "Evidence strength describes repeated camera and room-geometry observations, not measurement certainty. Verify the clear opening directly.")

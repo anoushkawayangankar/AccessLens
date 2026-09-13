@@ -20,6 +20,7 @@ final class AppDependencies {
     /// test scan. Production composition always returns an empty array.
     private let scanFindingOverrideProvider: ScanFindingOverrideProvider
     let scanAnalysisPresentationOverride: Bool
+    let scanQualityPresentationOverride: ScanQualityPresentation?
 
     init(
         navigator: AppNavigator? = nil,
@@ -32,6 +33,7 @@ final class AppDependencies {
         completedScanRepository: (any CompletedScanRepository)? = nil,
         guidanceProvider: any AccessibilityGuidanceProviding = DeterministicAccessibilityGuidanceProvider(),
         scanFindingOverrides: [[AccessibilityFinding]] = [],
+        scanQualityPresentationOverride: ScanQualityPresentation? = nil,
         scanAnalysisPresentationOverride: Bool = false
     ) {
         self.navigator = navigator ?? AppNavigator()
@@ -61,6 +63,7 @@ final class AppDependencies {
         )
         scanFindingOverrideProvider = ScanFindingOverrideProvider(overrides: scanFindingOverrides)
         self.scanAnalysisPresentationOverride = scanAnalysisPresentationOverride
+        self.scanQualityPresentationOverride = scanQualityPresentationOverride
         sessionController.frameSource.consumer = coordinator
     }
 
@@ -88,6 +91,7 @@ final class AppDependencies {
             ? InMemoryCompletedScanRepository(scans: AppLaunchConfiguration.historyOverride(arguments: arguments))
             : nil
         let scanAnalysisPresentationOverride = AppLaunchConfiguration.scanAnalysisPresentationOverride(arguments: arguments)
+        let scanQualityPresentationOverride = AppLaunchConfiguration.scanQualityPresentationOverride(arguments: arguments)
         if let authorization = AppLaunchConfiguration.cameraAuthorizationOverride(arguments: arguments) {
             return AppDependencies(
                 onboardingState: onboardingState,
@@ -96,7 +100,8 @@ final class AppDependencies {
                 ),
                 completedScanRepository: testRepository,
                 scanFindingOverrides: scanFindingOverride.isEmpty ? [] : [scanFindingOverride],
-                scanAnalysisPresentationOverride: scanAnalysisPresentationOverride
+                scanQualityPresentationOverride: scanQualityPresentationOverride,
+                scanAnalysisPresentationOverride: scanAnalysisPresentationOverride || scanQualityPresentationOverride != nil
             )
         }
 
@@ -105,7 +110,8 @@ final class AppDependencies {
                 onboardingState: onboardingState,
                 completedScanRepository: testRepository,
                 scanFindingOverrides: scanFindingOverride.isEmpty ? [] : [scanFindingOverride],
-                scanAnalysisPresentationOverride: scanAnalysisPresentationOverride
+                scanQualityPresentationOverride: scanQualityPresentationOverride,
+                scanAnalysisPresentationOverride: scanAnalysisPresentationOverride || scanQualityPresentationOverride != nil
             )
         }
         #endif
@@ -134,14 +140,27 @@ private enum AppLaunchConfiguration {
     static func historyOverride(arguments: [String]) -> [CompletedScan] {
         guard let index = arguments.firstIndex(of: "-accesslens-history"),
               arguments.indices.contains(index + 1),
-              ["seeded", "passage"].contains(arguments[index + 1]) else { return [] }
-        let findingKind = arguments[index + 1] == "passage" ? "stable-passage" : "stable-low-contrast"
+              ["seeded", "passage", "fused"].contains(arguments[index + 1]) else { return [] }
+        let historyKind = arguments[index + 1]
+        let findingKind = historyKind == "passage"
+            ? "stable-passage"
+            : (historyKind == "fused" ? "fused-limited" : "stable-low-contrast")
         let findings = scanFindingOverride(arguments: ["-accesslens-scan-findings", findingKind])
         guard let newer = UUID(uuidString: "33333333-3333-3333-3333-333333333333"),
               let older = UUID(uuidString: "44444444-4444-4444-4444-444444444444") else { return [] }
         return [
             CompletedScan(sessionID: older, startedAt: Date(timeIntervalSince1970: 100), completedAt: Date(timeIntervalSince1970: 110), findings: []),
-            CompletedScan(sessionID: newer, startedAt: Date(timeIntervalSince1970: 200), completedAt: Date(timeIntervalSince1970: 210), findings: findings)
+            CompletedScan(
+                sessionID: newer,
+                startedAt: Date(timeIntervalSince1970: 200),
+                completedAt: Date(timeIntervalSince1970: 210),
+                findings: findings,
+                qualitySummary: historyKind == "fused"
+                    ? ScanQualitySummary(
+                        state: .limited,
+                        summary: "Some areas were captured with limited visibility. Review the environment directly and consider scanning again."
+                    ) : nil
+            )
         ]
     }
     #endif
@@ -195,7 +214,7 @@ private enum AppLaunchConfiguration {
         }
         let valueIndex = arguments.index(after: argumentIndex)
         guard valueIndex < arguments.endIndex,
-              ["stable-low-contrast", "multiple-low-contrast", "stable-passage"].contains(arguments[valueIndex]) else {
+              ["stable-low-contrast", "multiple-low-contrast", "stable-passage", "fused-limited"].contains(arguments[valueIndex]) else {
             return []
         }
 
@@ -228,14 +247,17 @@ private enum AppLaunchConfiguration {
                 )
             )]
         }
+        let isFusedLimited = arguments[valueIndex] == "fused-limited"
         let contexts = arguments[valueIndex] == "multiple-low-contrast" ? ["EXIT", "ELEVATOR"] : ["EXIT"]
         return contexts.enumerated().map { index, text in AccessibilityFinding(
             id: index == 0 ? findingID : sessionUUID,
             category: .potentialLowContrastText,
             title: "Potential low contrast",
             explanation: "Text in this area may be difficult to distinguish from its background.",
-            evidenceSummary: "Deterministic UI-test finding.",
-            evidenceStrength: index == 0 ? .moderate : .limited,
+            evidenceSummary: isFusedLimited
+                ? "AccessLens observed a possible low-contrast area, but evidence was limited. Check the area directly."
+                : "Recognized signage and low-contrast evidence overlapped in a consistent image region across repeated observations.",
+            evidenceStrength: isFusedLimited || index > 0 ? .limited : .moderate,
             region: NormalizedRegion(x: 0.2, y: 0.2, width: 0.3, height: 0.1),
             firstObservedTime: 1,
             lastObservedTime: 3,
@@ -250,7 +272,13 @@ private enum AppLaunchConfiguration {
                 AnalyzerIdentifier(rawValue: "vision.visual-contrast.v1")
             ],
             relevantText: text,
-            estimatedContrastRatio: ContrastRatio(lighterLuminance: 0.2, darkerLuminance: 0.02)
+            estimatedContrastRatio: ContrastRatio(lighterLuminance: 0.2, darkerLuminance: 0.02),
+            qualityContext: FindingQualityContext(
+                state: isFusedLimited || index > 0 ? .limited : .good,
+                summary: isFusedLimited || index > 0
+                    ? "Some supporting observations had limited sharpness, exposure, or framing."
+                    : "Capture quality was adequate across the supporting observations."
+            )
         ) }
     }
 
@@ -260,6 +288,38 @@ private enum AppLaunchConfiguration {
         }
         let valueIndex = arguments.index(after: argumentIndex)
         guard valueIndex < arguments.endIndex else { return false }
-        return ["stable-low-contrast", "multiple-low-contrast", "stable-passage", "analyzing-empty"].contains(arguments[valueIndex])
+        return ["stable-low-contrast", "multiple-low-contrast", "stable-passage", "fused-limited", "analyzing-empty"].contains(arguments[valueIndex])
+    }
+
+    static func scanQualityPresentationOverride(arguments: [String]) -> ScanQualityPresentation? {
+        guard let index = arguments.firstIndex(of: "-accesslens-scan-quality"),
+              arguments.indices.contains(index + 1) else { return nil }
+        let state: ScanQualityState
+        let guidance: String?
+        switch arguments[index + 1] {
+        case "good":
+            state = .good
+            guidance = nil
+        case "limited":
+            state = .limited
+            guidance = "Hold the phone steady and include clear visual detail."
+        case "unusable":
+            state = .unusable
+            guidance = "Move to better lighting."
+        default:
+            return nil
+        }
+        let frameQuality = ScanFrameQuality(
+            state: state,
+            reasons: state == .good ? [] : (state == .unusable ? [.severeUnderexposure] : [.lowSharpness]),
+            metrics: nil
+        )
+        let summary = ScanQualitySummary(
+            state: state == .good ? .good : .limited,
+            summary: state == .good
+                ? "Recent frames provided adequate visibility for supported analysis."
+                : "Some areas were captured with limited visibility. Review the environment directly and consider scanning again."
+        )
+        return ScanQualityPresentation(frameQuality: frameQuality, guidance: guidance, summary: summary)
     }
 }
