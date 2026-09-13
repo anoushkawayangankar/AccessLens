@@ -32,6 +32,7 @@ enum AppRoute: Hashable, Sendable {
     case scan
     case scanReview(CompletedScan)
     case findingDetail(AccessibilityFinding)
+    case report(CompletedScan)
     case savedScans
     case scanDetail(id: UUID)
     case settings

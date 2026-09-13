@@ -16,6 +16,7 @@ final class AppDependencies {
     let analysisCoordinator: AnalysisCoordinator
     let completedScanRepository: any CompletedScanRepository
     let guidanceProvider: any AccessibilityGuidanceProviding
+    let reportExporter: any AccessibilityReportExporting
     /// DEBUG launch composition may provide deterministic evidence for one
     /// test scan. Production composition always returns an empty array.
     private let scanFindingOverrideProvider: ScanFindingOverrideProvider
@@ -32,12 +33,16 @@ final class AppDependencies {
         analysisCoordinator: AnalysisCoordinator? = nil,
         completedScanRepository: (any CompletedScanRepository)? = nil,
         guidanceProvider: any AccessibilityGuidanceProviding = DeterministicAccessibilityGuidanceProvider(),
+        reportExporter: (any AccessibilityReportExporting)? = nil,
         scanFindingOverrides: [[AccessibilityFinding]] = [],
         scanQualityPresentationOverride: ScanQualityPresentation? = nil,
         scanAnalysisPresentationOverride: Bool = false
     ) {
         self.navigator = navigator ?? AppNavigator()
         self.guidanceProvider = guidanceProvider
+        self.reportExporter = reportExporter ?? AccessibilityReportPDFExporter(
+            generator: AccessibilityReportGenerator(guidanceProvider: guidanceProvider)
+        )
         self.completedScanRepository = completedScanRepository ?? SwiftDataCompletedScanRepository()
         self.lifecycleCoordinator = lifecycleCoordinator ?? AppLifecycleCoordinator()
         self.onboardingState = onboardingState ?? OnboardingState(
@@ -85,6 +90,8 @@ final class AppDependencies {
         }
 
         let scanFindingOverride = AppLaunchConfiguration.scanFindingOverride(arguments: arguments)
+        let reportExporter: (any AccessibilityReportExporting)? = arguments.contains("-accesslens-export-failure")
+            ? FailingReportExporter() : nil
         // UI tests opt into a fresh in-memory history on every launch. This
         // branch is absent in Release and never touches the user's disk store.
         let testRepository: (any CompletedScanRepository)? = arguments.contains("-accesslens-history")
@@ -99,6 +106,7 @@ final class AppDependencies {
                     authorization: authorization
                 ),
                 completedScanRepository: testRepository,
+                reportExporter: reportExporter,
                 scanFindingOverrides: scanFindingOverride.isEmpty ? [] : [scanFindingOverride],
                 scanQualityPresentationOverride: scanQualityPresentationOverride,
                 scanAnalysisPresentationOverride: scanAnalysisPresentationOverride || scanQualityPresentationOverride != nil
@@ -109,6 +117,7 @@ final class AppDependencies {
             return AppDependencies(
                 onboardingState: onboardingState,
                 completedScanRepository: testRepository,
+                reportExporter: reportExporter,
                 scanFindingOverrides: scanFindingOverride.isEmpty ? [] : [scanFindingOverride],
                 scanQualityPresentationOverride: scanQualityPresentationOverride,
                 scanAnalysisPresentationOverride: scanAnalysisPresentationOverride || scanQualityPresentationOverride != nil

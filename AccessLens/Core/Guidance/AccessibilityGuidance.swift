@@ -52,3 +52,13 @@ nonisolated struct GuidanceAction: Identifiable, Equatable, Sendable {
 nonisolated protocol AccessibilityGuidanceProviding: Sendable {
     func guidance(for finding: AccessibilityFinding) -> AccessibilityGuidance
 }
+
+extension FindingEvidenceStrength {
+    nonisolated var guidanceLabel: String {
+        switch self {
+        case .limited: String(localized: "Limited evidence")
+        case .moderate: String(localized: "Moderate evidence")
+        case .strong: String(localized: "Strong evidence")
+        }
+    }
+}

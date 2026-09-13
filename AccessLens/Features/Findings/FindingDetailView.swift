@@ -106,13 +106,3 @@ struct FindingDetailView: View {
         }
     }
 }
-
-extension FindingEvidenceStrength {
-    var guidanceLabel: String {
-        switch self {
-        case .limited: String(localized: "Limited evidence")
-        case .moderate: String(localized: "Moderate evidence")
-        case .strong: String(localized: "Strong evidence")
-        }
-    }
-}

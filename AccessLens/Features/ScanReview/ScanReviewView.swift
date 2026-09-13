@@ -29,6 +29,13 @@ struct ScanReviewView: View {
 
                 summarySection
                 saveStatus
+                NavigationLink(value: AppRoute.report(viewModel.completedScan)) {
+                    Label("View Report", systemImage: "doc.text")
+                        .frame(minHeight: AppLayout.minimumTouchTarget)
+                }
+                .buttonStyle(.bordered)
+                .accessibilityHint("Opens a readable report with export and sharing options.")
+                .accessibilityIdentifier("view-report")
                 findingsSection
                 limitationsSection
 

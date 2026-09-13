@@ -43,6 +43,11 @@ struct AppRootView: View {
     @ViewBuilder
     private func destination(for route: AppRoute) -> some View {
         switch route {
+        case let .report(scan):
+            AccessibilityReportView(scan: scan, exporter: dependencies.reportExporter) {
+                navigator.goBack()
+            }
+            .id(scan.id)
         case let .findingDetail(finding):
             FindingDetailView(guidance: dependencies.guidanceProvider.guidance(for: finding)) {
                 navigator.goBack()
@@ -104,6 +109,8 @@ private struct FutureDestinationView: View {
             "Scan Review"
         case .findingDetail:
             "Finding Detail"
+        case .report:
+            "Accessibility Report"
         case .savedScans:
             "Saved Scans"
         case .scanDetail:
